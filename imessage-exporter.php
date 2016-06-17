@@ -137,22 +137,23 @@ while ( $row = $contacts->fetchArray() ) {
 	file_put_contents(
 		$options['o'] . $contact . '.html',
 		'<!doctype html>
-		<html>
-			<head>
-				<meta charset="UTF-8">
-				<title>Conversation with ' . $contact . '</title>
-				<style type="text/css">
-				
-				body { font-family: "Helvetica Neue", sans-serif; font-size: 10pt; }
-				p { margin: 0; clear: both; }
-				.timestamp { text-align: center; color: #8e8e93; font-variant: small-caps; font-weight: bold; font-size: 9pt; }
-				img { max-width: 75%; }
-				.message { text-align: left; color: black; border-radius: 8px; background-color: #e1e1e1; padding: 6px; display: inline-block; max-width: 75%; margin-bottom: 5px; float: left; }
-				.message[data-from="self"] { text-align: right; background-color: #007aff; color: white; float: right;}
-				
-				</style>
-			</head>
-			<body>'
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Conversation with ' . $contact . '</title>
+		<style type="text/css">
+		
+		body { font-family: "Helvetica Neue", sans-serif; font-size: 10pt; }
+		p { margin: 0; clear: both; }
+		.timestamp { text-align: center; color: #8e8e93; font-variant: small-caps; font-weight: bold; font-size: 9pt; }
+		img { max-width: 75%; }
+		.message { text-align: left; color: black; border-radius: 8px; background-color: #e1e1e1; padding: 6px; display: inline-block; max-width: 75%; margin-bottom: 5px; float: left; }
+		.message[data-from="self"] { text-align: right; background-color: #007aff; color: white; float: right;}
+		
+		</style>
+	</head>
+	<body>
+'
 	);
 
 	$last_time = 0;
@@ -163,7 +164,7 @@ while ( $row = $contacts->fetchArray() ) {
 		if ( $this_time - $last_time > ( 60 * 60 ) ) {
 			file_put_contents(
 				$options['o'] . $contact . '.html',
-				'<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time ) . '</p><br />',
+				"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time ) . '</p><br />' . "\n",
 				FILE_APPEND
 			);
 		}
@@ -206,24 +207,24 @@ while ( $row = $contacts->fetchArray() ) {
 			
 			file_put_contents(
 				$options['o'] . $contact . '.html',
-				'<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
 				FILE_APPEND
 			);
 		}
 		else {
 			file_put_contents(
 				$options['o'] . $contact . '.html',
-				'<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . htmlspecialchars( $message['content'] ) . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . htmlspecialchars( trim( $message['content'] ) ) . '</p>',
 				FILE_APPEND
 			);
 		}
 		
 		file_put_contents(
 			$options['o'] . $contact . '.html',
-			'<br />',
+			"<br />\n",
 			FILE_APPEND
 		);
 	}
 	
-	file_put_contents( $options['o'] . $contact . '.html', '</body></html>', FILE_APPEND );
+	file_put_contents( $options['o'] . $contact . '.html', "\t</body>\n</html>", FILE_APPEND );
 }
