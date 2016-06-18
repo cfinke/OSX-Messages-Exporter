@@ -53,7 +53,8 @@ if ( ! isset( $options['r'] ) ) {
 
 $temporary_db = $database_file;
 $temp_db = new SQLite3( $temporary_db );
-$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (contact, timestamp) ON CONFLICT REPLACE )" );
+$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, chat_title TEXT, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (contact, timestamp) ON CONFLICT REPLACE )" );
+$temp_db->exec( "CREATE INDEX IF NOT EXISTS chat_title_index ON messages (chat_title)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
 
