@@ -53,7 +53,7 @@ if ( ! isset( $options['r'] ) ) {
 
 $temporary_db = $database_file;
 $temp_db = new SQLite3( $temporary_db );
-$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, chat_title TEXT, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (contact, timestamp) ON CONFLICT REPLACE )" );
+$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, chat_title TEXT, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (chat_title, contact, timestamp) ON CONFLICT REPLACE )" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS chat_title_index ON messages (chat_title)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
@@ -89,7 +89,8 @@ if ( ! isset( $options['r'] ) ) {
 			"SELECT
 				is_from_me,
 				datetime(date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
-				text
+				text,
+				handle_id
 			FROM message
 			WHERE handle_id IN (SELECT handle_id FROM chat_handle_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
@@ -100,13 +101,22 @@ if ( ! isset( $options['r'] ) ) {
 			if ( empty( trim( $message['text'] ) ) ) {
 				continue;
 			}
-		
+			
+			// For group chats, get the contact that sent this message.
+			$contact = $contactNumber;
+			$contactStatement = $db->prepare( "SELECT id FROM handle WHERE ROWID=:handle_id" );
+			$contactStatement->bindValue( ':handle_id', $message['handle_id'] );
+			$contactResults = $contactStatement->execute();
+			while ( $contactResult = $contactResults->fetchArray( SQLITE3_ASSOC ) ) {
+				$contact = $contactResult['id'];
+			}
+			
 			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
-			$insert_statement->bindValue( ':chat_title', $chat_title );
-			$insert_statement->bindValue( ':contact', $contactNumber );
+			$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+			$insert_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
 			$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-			$insert_statement->bindValue( ':timestamp', $message['date'] );
-			$insert_statement->bindValue( ':content', $message['text'] );
+			$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
+			$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
 			$insert_statement->execute();
 		}
 	
@@ -126,18 +136,18 @@ if ( ! isset( $options['r'] ) ) {
 					)
 				)
 			)" );
-		$statement->bindValue( ':guid', $guid );
+		$statement->bindValue( ':guid', $guid, SQLITE3_TEXT );
 	
 		$attachments = $statement->execute();
 	
 		while ( $attachment = $attachments->fetchArray( SQLITE3_ASSOC ) ) {
 			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
-			$insert_statement->bindValue( ':chat_title', $chat_title );
-			$insert_statement->bindValue( ':contact', $contactNumber );
+			$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+			$insert_statement->bindValue( ':contact', $contactNumber, SQLITE3_TEXT );
 			$insert_statement->bindValue( ':is_from_me', $attachment['is_outgoing'] );
-			$insert_statement->bindValue( ':timestamp', $attachment['date'] );
-			$insert_statement->bindValue( ':attachment_mime_type', $attachment['mime_type'] );
-			$insert_statement->bindValue( ':content', $attachment['filename'] );
+			$insert_statement->bindValue( ':timestamp', $attachment['date'], SQLITE3_TEXT );
+			$insert_statement->bindValue( ':attachment_mime_type', $attachment['mime_type'], SQLITE3_TEXT );
+			$insert_statement->bindValue( ':content', $attachment['filename'], SQLITE3_TEXT );
 			$insert_statement->execute();
 		}
 	}
@@ -155,7 +165,7 @@ while ( $row = $contacts->fetchArray() ) {
 	}
 
 	$messages_statement = $temp_db->prepare( "SELECT * FROM messages WHERE chat_title=:chat_title ORDER BY timestamp ASC" );
-	$messages_statement->bindValue( ':chat_title', $chat_title );
+	$messages_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
 	$messages = $messages_statement->execute();
 	
 	file_put_contents(
