@@ -14,7 +14,7 @@
 #                         Rebuild the HTML files from the existing DB.
 
 
-$options = getopt( "o:fh", array( "output_directory:", "flush", "help" ) );
+$options = getopt( "o:fhr", array( "output_directory:", "flush", "help", "rebuild" ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 	die( "Usage: imessage-exporter.php [-o|--output_directory /path/to/output/direcotry] [-f|--flush] [-r|--rebuild]\n" );
@@ -43,19 +43,21 @@ if ( ! file_exists( $options['o'] ) ) {
 	mkdir( $options['o'] );
 }
 
-if ( ! isset( $options['r'] ) ) {
-	$database_file = $options['o'] . 'imessage-exporter.db';
+$database_file = $options['o'] . 'imessage-exporter.db';
 
+if ( ! isset( $options['r'] ) ) {
 	if ( isset( $options['f'] ) && file_exists( $database_file ) ) {
 		unlink( $database_file );
 	}
+}
 
-	$temporary_db = $database_file;
-	$temp_db = new SQLite3( $temporary_db );
-	$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (contact, timestamp) ON CONFLICT REPLACE )" );
-	$temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
-	$temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
+$temporary_db = $database_file;
+$temp_db = new SQLite3( $temporary_db );
+$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (contact, timestamp) ON CONFLICT REPLACE )" );
+$temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
+$temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
 
+if ( ! isset( $options['r'] ) ) {
 	$db = new SQLite3( $_SERVER['HOME'] . "/Library/Messages/chat.db" );
 	$chats = $db->query( "SELECT * FROM chat" );
 
