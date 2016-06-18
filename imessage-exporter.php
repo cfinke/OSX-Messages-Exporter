@@ -127,9 +127,11 @@ $contacts = $temp_db->query( "SELECT contact FROM messages GROUP BY contact ORDE
 
 while ( $row = $contacts->fetchArray() ) {
 	$contact = $row['contact'];
+	$html_file = $options['o'] . $contact . '.html';
+	$attachments_directory = $options['o'] . $contact . '/';
 	
-	if ( ! file_exists( $options['o'] . $contact . ".html" ) ) {
-		touch( $options['o'] . $contact . '.html' );
+	if ( ! file_exists( $html_file ) ) {
+		touch( $html_file );
 	}
 
 	$messages_statement = $temp_db->prepare( "SELECT * FROM messages WHERE contact=:contact ORDER BY timestamp ASC" );
@@ -137,7 +139,7 @@ while ( $row = $contacts->fetchArray() ) {
 	$messages = $messages_statement->execute();
 	
 	file_put_contents(
-		$options['o'] . $contact . '.html',
+		$html_file,
 		'<!doctype html>
 <html>
 	<head>
@@ -165,7 +167,7 @@ while ( $row = $contacts->fetchArray() ) {
 		
 		if ( $this_time - $last_time > ( 60 * 60 ) ) {
 			file_put_contents(
-				$options['o'] . $contact . '.html',
+				$html_file,
 				"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time ) . '</p><br />' . "\n",
 				FILE_APPEND
 			);
@@ -174,8 +176,8 @@ while ( $row = $contacts->fetchArray() ) {
 		$last_time = $this_time;
 
 		if ( $message['is_attachment'] ) {
-			if ( ! file_exists( $options['o'] . $contact . '/' ) ) {
-				mkdir( $options['o'] . $contact . '/' );
+			if ( ! file_exists( $attachments_directory ) ) {
+				mkdir( $attachments_directory );
 			}
 			
 			$attachment_filename = basename( $message['content'] );
@@ -183,13 +185,13 @@ while ( $row = $contacts->fetchArray() ) {
 
 			$suffix = 1;
 			
-			while ( file_exists( $options['o'] . $contact . '/' . $attachment_filename ) ) {
+			while ( file_exists( $attachments_directory . $attachment_filename ) ) {
 				++$suffix;
 			
 				$attachment_filename = $filename_base . '-' . $suffix . '.' . $extension;
 			}
 			
-			copy( preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] ), $options['o'] . $contact . '/' . $attachment_filename );
+			copy( preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] ), $attachments_directory . $attachment_filename );
 
 			$html_embed = '';
 
@@ -208,25 +210,25 @@ while ( $row = $contacts->fetchArray() ) {
 			}
 			
 			file_put_contents(
-				$options['o'] . $contact . '.html',
+				$html_file,
 				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
 				FILE_APPEND
 			);
 		}
 		else {
 			file_put_contents(
-				$options['o'] . $contact . '.html',
+				$html_file,
 				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . htmlspecialchars( trim( $message['content'] ) ) . '</p>',
 				FILE_APPEND
 			);
 		}
 		
 		file_put_contents(
-			$options['o'] . $contact . '.html',
+			$html_file,
 			"<br />\n",
 			FILE_APPEND
 		);
 	}
 	
-	file_put_contents( $options['o'] . $contact . '.html', "\t</body>\n</html>", FILE_APPEND );
+	file_put_contents( $html_file, "\t</body>\n</html>", FILE_APPEND );
 }
