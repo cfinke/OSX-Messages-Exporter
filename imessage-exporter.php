@@ -112,11 +112,10 @@ if ( ! isset( $options['r'] ) ) {
 		$attachments = $statement->execute();
 	
 		while ( $attachment = $attachments->fetchArray( SQLITE3_ASSOC ) ) {
-			$insert_statement = $temp_db->prepare( "INSERT INTO messages (contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:contact, :is_attachment, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
+			$insert_statement = $temp_db->prepare( "INSERT INTO messages (contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
 			$insert_statement->bindValue( ':contact', $contactNumber );
 			$insert_statement->bindValue( ':is_from_me', $attachment['is_outgoing'] );
 			$insert_statement->bindValue( ':timestamp', $attachment['date'] );
-			$insert_statement->bindValue( ':is_attachment', 1 );
 			$insert_statement->bindValue( ':attachment_mime_type', $attachment['mime_type'] );
 			$insert_statement->bindValue( ':content', $attachment['filename'] );
 			$insert_statement->execute();
