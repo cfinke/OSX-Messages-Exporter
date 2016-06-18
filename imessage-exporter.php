@@ -64,8 +64,26 @@ if ( ! isset( $options['r'] ) ) {
 
 	while ( $row = $chats->fetchArray( SQLITE3_ASSOC ) ) {
 		$guid = $row['guid'];
-
+		$chat_id = $row['ROWID'];
 		$contactNumber = array_pop( explode( ';', $guid ) );
+
+		$participant_identifiers = array();
+		$chat_participants_statement = $db->prepare(
+			"SELECT id FROM handle WHERE ROWID IN (SELECT handle_id FROM chat_handle_join WHERE chat_id=:chat_id)"
+		);
+		$chat_participants_statement->bindValue( ':chat_id', $chat_id );
+		$chat_participants = $chat_participants_statement->execute();
+
+		while ( $participant = $chat_participants->fetchArray( SQLITE3_ASSOC ) ) {
+			$participant_identifiers[] = $participant['id'];
+		}
+
+		sort( $participant_identifiers );
+		$chat_title = implode( ",", $participant_identifiers );
+
+		if ( empty( $chat_title ) ) {
+			$chat_title = $contactNumber;
+		}
 
 		$statement = $db->prepare(
 			"SELECT
@@ -83,7 +101,8 @@ if ( ! isset( $options['r'] ) ) {
 				continue;
 			}
 		
-			$insert_statement = $temp_db->prepare( "INSERT INTO messages (contact, is_from_me, timestamp, content) VALUES (:contact, :is_from_me, :timestamp, :content)" );
+			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
+			$insert_statement->bindValue( ':chat_title', $chat_title );
 			$insert_statement->bindValue( ':contact', $contactNumber );
 			$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
 			$insert_statement->bindValue( ':timestamp', $message['date'] );
@@ -112,7 +131,8 @@ if ( ! isset( $options['r'] ) ) {
 		$attachments = $statement->execute();
 	
 		while ( $attachment = $attachments->fetchArray( SQLITE3_ASSOC ) ) {
-			$insert_statement = $temp_db->prepare( "INSERT INTO messages (contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
+			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
+			$insert_statement->bindValue( ':chat_title', $chat_title );
 			$insert_statement->bindValue( ':contact', $contactNumber );
 			$insert_statement->bindValue( ':is_from_me', $attachment['is_outgoing'] );
 			$insert_statement->bindValue( ':timestamp', $attachment['date'] );
@@ -123,19 +143,19 @@ if ( ! isset( $options['r'] ) ) {
 	}
 }
 
-$contacts = $temp_db->query( "SELECT contact FROM messages GROUP BY contact ORDER BY contact ASC" );
+$contacts = $temp_db->query( "SELECT chat_title FROM messages GROUP BY chat_title ORDER BY chat_title ASC" );
 
 while ( $row = $contacts->fetchArray() ) {
-	$contact = $row['contact'];
-	$html_file = $options['o'] . $contact . '.html';
-	$attachments_directory = $options['o'] . $contact . '/';
+	$chat_title = $row['chat_title'];
+	$html_file = $options['o'] . $chat_title . '.html';
+	$attachments_directory = $options['o'] . $chat_title . '/';
 	
 	if ( ! file_exists( $html_file ) ) {
 		touch( $html_file );
 	}
 
-	$messages_statement = $temp_db->prepare( "SELECT * FROM messages WHERE contact=:contact ORDER BY timestamp ASC" );
-	$messages_statement->bindValue( ':contact', $contact );
+	$messages_statement = $temp_db->prepare( "SELECT * FROM messages WHERE chat_title=:chat_title ORDER BY timestamp ASC" );
+	$messages_statement->bindValue( ':chat_title', $chat_title );
 	$messages = $messages_statement->execute();
 	
 	file_put_contents(
@@ -144,7 +164,7 @@ while ( $row = $contacts->fetchArray() ) {
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Conversation with ' . $contact . '</title>
+		<title>Conversation: ' . $chat_title . '</title>
 		<style type="text/css">
 		
 		body { font-family: "Helvetica Neue", sans-serif; font-size: 10pt; }
@@ -196,29 +216,29 @@ while ( $row = $contacts->fetchArray() ) {
 			$html_embed = '';
 
 			if ( strpos( $message['attachment_mime_type'], 'image' ) === 0 ) {
-				$html_embed = '<img src="' . $contact . '/' . $attachment_filename . '" />';
+				$html_embed = '<img src="' . $chat_title . '/' . $attachment_filename . '" />';
 			}
 			else {
 				if ( strpos( $message['attachment_mime_type'], 'video' ) === 0 ) {
-					$html_embed = '<video controls><source src="' . $contact . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
+					$html_embed = '<video controls><source src="' . $chat_title . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
 				}
 				else if ( strpos( $message['attachment_mime_type'], 'audio' ) === 0 ) {
-					$html_embed = '<audio controls><source src="' . $contact . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
+					$html_embed = '<audio controls><source src="' . $chat_title . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
 				}
 
-				$html_embed .= '<a href="' . $contact . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
+				$html_embed .= '<a href="' . $chat_title . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
 			}
 			
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
 				FILE_APPEND
 			);
 		}
 		else {
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $contact ) . '" data-timestamp="' . $message['timestamp'] . '">' . htmlspecialchars( trim( $message['content'] ) ) . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . htmlspecialchars( trim( $message['content'] ) ) . '</p>',
 				FILE_APPEND
 			);
 		}
