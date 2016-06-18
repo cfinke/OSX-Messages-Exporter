@@ -91,7 +91,7 @@ if ( ! isset( $options['r'] ) ) {
 				datetime(date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
 				text
 			FROM message
-			WHERE handle_id=(SELECT handle_id FROM chat_handle_join WHERE chat_id=:rowid)" );
+			WHERE handle_id IN (SELECT handle_id FROM chat_handle_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
 	
 		$messages = $statement->execute();
