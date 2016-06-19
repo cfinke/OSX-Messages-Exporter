@@ -103,17 +103,15 @@ if ( ! isset( $options['r'] ) ) {
 			// 0xfffc is the Object Replacement Character. iMessage uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 			
-			if ( empty( $message['text'] ) ) {
-				continue;
+			if ( ! empty( $message['text'] ) ) {
+				$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
+				$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+				$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+				$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+				$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
+				$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
+				$insert_statement->execute();
 			}
-			
-			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
-			$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-			$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
-			$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-			$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
-			$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
-			$insert_statement->execute();
 			
 			if ( $message['cache_has_attachments'] ) {
 				$attachmentStatement = $db->prepare(
