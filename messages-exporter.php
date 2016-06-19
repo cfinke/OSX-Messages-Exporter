@@ -1,12 +1,12 @@
 #!/usr/bin/env php
 <?php
 
-# Export iMessage history to files.
+# Export Messages conversations to HTML files.
 # Based on https://github.com/PeterKaminski09/baskup, which was
 # based on https://github.com/kyro38/MiscStuff/blob/master/OSXStuff/iMessageBackup.sh
 #
 # Usage:
-# $ imessage-exporter.php [-o|--output_directory output_directory]
+# $ messages-exporter.php [-o|--output_directory output_directory]
 #                         The path to the directory where the messages should be saved. Save files in the current directory by default.
 #                         [-f|--flush]
 #                         Flushes the existing backup DB.
@@ -16,7 +16,7 @@
 $options = getopt( "o:fhr", array( "output_directory:", "flush", "help", "rebuild" ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
-	die( "Usage: imessage-exporter.php [-o|--output_directory /path/to/output/direcotry] [-f|--flush] [-r|--rebuild]\n" );
+	die( "Usage: messages-exporter.php [-o|--output_directory /path/to/output/direcotry] [-f|--flush] [-r|--rebuild]\n" );
 }
 
 if ( ! isset( $options['o'] ) && empty( $options['output_directory'] ) ) {
@@ -42,7 +42,7 @@ if ( ! file_exists( $options['o'] ) ) {
 	mkdir( $options['o'] );
 }
 
-$database_file = $options['o'] . 'imessage-exporter.db';
+$database_file = $options['o'] . 'messages-exporter.db';
 
 if ( ! isset( $options['r'] ) ) {
 	if ( isset( $options['f'] ) && file_exists( $database_file ) ) {
@@ -99,7 +99,7 @@ if ( ! isset( $options['r'] ) ) {
 		$messages = $statement->execute();
 	
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
-			// 0xfffc is the Object Replacement Character. iMessage uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
+			// 0xfffc is the Object Replacement Character. Messages uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 			
 			$contact = get_contact_nicename( $message['contact'] );
@@ -269,6 +269,10 @@ while ( $row = $contacts->fetchArray() ) {
 function get_contact_nicename( $contact_notnice_name ) {
 	static $contact_nicename_map = array();
 	
+	if ( ! $contact_notnice_name ) {
+		return $contact_notnice_name;
+	}
+	
 	if ( isset( $contact_nicename_map[ $contact_notnice_name ] ) ) {
 		return $contact_nicename_map[ $contact_notnice_name ];
 	}
@@ -326,13 +330,22 @@ function get_contact_nicename( $contact_notnice_name ) {
 				|| in_array( preg_replace( '/^\+1/', '', preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ) ), $forms )
 				) {
 				$nameStatement = $contacts_db->prepare(
-					"SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME FROM ZABCDRECORD WHERE Z_PK = :zowner"
+					"SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME, ZABCDRECORD.ZORGANIZATION FROM ZABCDRECORD WHERE Z_PK = :zowner"
 				);
 				$nameStatement->bindValue( ':zowner', $phoneNumberResult['ZOWNER'] );
 				$nameResults = $nameStatement->execute();
 			
 				while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
 					$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
+					
+					if ( $nameResult['ZORGANIZATION'] ) {
+						if ( ! $name ) {
+							$name = $nameResult['ZORGANIZATION'];
+						}
+						else {
+							$name .= ' (' . $nameResult['ZORGANIZATION'] . ')';
+						}
+					}
 				
 					if ( $name ) {
 						$contact_nicename_map[ $contact_notnice_name ] = $name;
