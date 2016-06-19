@@ -87,12 +87,12 @@ if ( ! isset( $options['r'] ) ) {
 
 		$statement = $db->prepare(
 			"SELECT
-				is_from_me,
-				datetime(date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
-				text,
-				handle_id
-			FROM message
-			WHERE handle_id IN (SELECT handle_id FROM chat_handle_join WHERE chat_id=:rowid)" );
+				message.is_from_me,
+				datetime(message.date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
+				message.text,
+				handle.id as contact
+			FROM message LEFT JOIN handle ON message.handle_id=handle.ROWID
+			WHERE message.ROWID IN (SELECT message_id FROM chat_message_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
 	
 		$messages = $statement->execute();
@@ -102,18 +102,9 @@ if ( ! isset( $options['r'] ) ) {
 				continue;
 			}
 			
-			// For group chats, get the contact that sent this message.
-			$contact = $contactNumber;
-			$contactStatement = $db->prepare( "SELECT id FROM handle WHERE ROWID=:handle_id" );
-			$contactStatement->bindValue( ':handle_id', $message['handle_id'] );
-			$contactResults = $contactStatement->execute();
-			while ( $contactResult = $contactResults->fetchArray( SQLITE3_ASSOC ) ) {
-				$contact = $contactResult['id'];
-			}
-			
 			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
 			$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-			$insert_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
+			$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
 			$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
 			$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
 			$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
