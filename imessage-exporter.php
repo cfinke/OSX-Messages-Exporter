@@ -13,7 +13,6 @@
 #                         [-r|--rebuild]
 #                         Rebuild the HTML files from the existing DB.
 
-
 $options = getopt( "o:fhr", array( "output_directory:", "flush", "help", "rebuild" ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
@@ -75,11 +74,11 @@ if ( ! isset( $options['r'] ) ) {
 		$chat_participants = $chat_participants_statement->execute();
 
 		while ( $participant = $chat_participants->fetchArray( SQLITE3_ASSOC ) ) {
-			$participant_identifiers[] = $participant['id'];
+			$participant_identifiers[] = get_contact_nicename( $participant['id'] );
 		}
 
 		sort( $participant_identifiers );
-		$chat_title = implode( ",", $participant_identifiers );
+		$chat_title = implode( ", ", $participant_identifiers );
 
 		if ( empty( $chat_title ) ) {
 			$chat_title = $contactNumber;
@@ -103,10 +102,12 @@ if ( ! isset( $options['r'] ) ) {
 			// 0xfffc is the Object Replacement Character. iMessage uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 			
+			$contact = get_contact_nicename( $message['contact'] );
+			
 			if ( ! empty( $message['text'] ) ) {
 				$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
 				$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-				$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+				$insert_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
 				$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
 				$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
 				$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
@@ -128,7 +129,7 @@ if ( ! isset( $options['r'] ) ) {
 				while ( $attachmentResult = $attachmentResults->fetchArray( SQLITE3_ASSOC ) ) {
 					$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
 					$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-					$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+					$insert_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
 					$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
 					$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
 					$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
@@ -263,4 +264,84 @@ while ( $row = $contacts->fetchArray() ) {
 	}
 	
 	file_put_contents( $html_file, "\t</body>\n</html>", FILE_APPEND );
+}
+
+function get_contact_nicename( $contact_notnice_name ) {
+	static $contact_nicename_map = array();
+	
+	if ( isset( $contact_nicename_map[ $contact_notnice_name ] ) ) {
+		return $contact_nicename_map[ $contact_notnice_name ];
+	}
+	
+	$contact_nicename_map[ $contact_notnice_name ] = $contact_notnice_name;
+	
+	$address_book_db_file = $_SERVER['HOME'] . "/Library/Application Support/AddressBook/AddressBook-v22.abcddb";
+	
+	if ( ! file_exists( $address_book_db_file ) ) {
+		return $contact_nicename_map[ $contact_notnice_name ];
+	}
+	
+	$contacts_db = new SQLite3( $address_book_db_file );
+	
+	if ( strpos( $contact_notnice_name, '@' ) !== false ) {
+		// Assume an email address.
+		$nameStatement = $contacts_db->prepare(
+			"SELECT
+				ZABCDRECORD.ZFIRSTNAME,
+				ZABCDRECORD.ZLASTNAME
+			FROM ZABCDEMAILADDRESS
+				LEFT JOIN ZABCDRECORD ON ZABCDEMAILADDRESS.ZOWNER=ZABCDRECORD.Z_PK
+			WHERE
+				ZABCDEMAILADDRESS.ZADDRESS=:address"
+		);
+		
+		$nameStatement->bindValue( ':address', $contact_notnice_name );
+		$nameResults = $nameStatement->execute();
+
+		while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
+			$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
+
+			if ( $name ) {
+				$contact_nicename_map[ $contact_notnice_name ] = $name;
+				break;
+			}
+		}
+	}
+	else {
+		// Assume a phone number.
+		$forms = array();
+		$forms[] = $contact_notnice_name;
+		$forms[] = preg_replace( '/[^0-9]/', '', $contact_notnice_name );
+		$forms[] = preg_replace( '/[^0-9]/', '', preg_replace( '/^\+1/', '', $contact_notnice_name ) );
+
+		$forms = array_unique( $forms );
+	
+		$phoneNumberStatement = $contacts_db->prepare( "SELECT ZOWNER, ZFULLNUMBER FROM ZABCDPHONENUMBER" );
+		$phoneNumberResults = $phoneNumberStatement->execute();
+	
+		while ( $phoneNumberResult = $phoneNumberResults->fetchArray( SQLITE3_ASSOC ) ) {
+			if (
+				in_array( $phoneNumberResult['ZFULLNUMBER'], $forms )
+				|| in_array( preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ), $forms )
+				|| in_array( preg_replace( '/^\+1/', '', preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ) ), $forms )
+				) {
+				$nameStatement = $contacts_db->prepare(
+					"SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME FROM ZABCDRECORD WHERE Z_PK = :zowner"
+				);
+				$nameStatement->bindValue( ':zowner', $phoneNumberResult['ZOWNER'] );
+				$nameResults = $nameStatement->execute();
+			
+				while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
+					$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
+				
+					if ( $name ) {
+						$contact_nicename_map[ $contact_notnice_name ] = $name;
+						break 2;
+					}
+				}
+			}
+		}
+	}
+	
+	return $contact_nicename_map[ $contact_notnice_name ];
 }
