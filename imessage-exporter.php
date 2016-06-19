@@ -53,7 +53,7 @@ if ( ! isset( $options['r'] ) ) {
 
 $temporary_db = $database_file;
 $temp_db = new SQLite3( $temporary_db );
-$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, chat_title TEXT, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (chat_title, contact, timestamp) ON CONFLICT REPLACE )" );
+$temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMARY KEY, chat_title TEXT, is_attachment INT, attachment_mime_type TEXT, contact TEXT, is_from_me INT, timestamp TEXT, content TEXT, UNIQUE (chat_title, contact, timestamp, content, is_from_me) ON CONFLICT REPLACE )" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS chat_title_index ON messages (chat_title)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
@@ -87,10 +87,12 @@ if ( ! isset( $options['r'] ) ) {
 
 		$statement = $db->prepare(
 			"SELECT
+				message.ROWID,
 				message.is_from_me,
 				datetime(message.date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
 				message.text,
-				handle.id as contact
+				handle.id as contact,
+				message.cache_has_attachments
 			FROM message LEFT JOIN handle ON message.handle_id=handle.ROWID
 			WHERE message.ROWID IN (SELECT message_id FROM chat_message_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
@@ -99,9 +101,9 @@ if ( ! isset( $options['r'] ) ) {
 	
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
 			// 0xfffc is the Object Replacement Character. iMessage uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
-			$message['text'] = str_replace( '￼', '', $message['text'] );
+			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 			
-			if ( empty( trim( $message['text'] ) ) ) {
+			if ( empty( $message['text'] ) ) {
 				continue;
 			}
 			
@@ -112,37 +114,30 @@ if ( ! isset( $options['r'] ) ) {
 			$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
 			$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
 			$insert_statement->execute();
-		}
-	
-		$statement = $db->prepare(
-			"SELECT
-				filename,
-				datetime(created_date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') AS date,
-				is_outgoing,
-				mime_type
-			FROM attachment
-			WHERE rowid IN (
-				SELECT attachment_id FROM message_attachment_join where message_id in (
-					SELECT rowid FROM message where cache_has_attachments=1 and handle_id=(
-						SELECT handle_id FROM chat_handle_join where chat_id=(
-							SELECT ROWID FROM chat where guid=:guid
-						)
-					)
-				)
-			)" );
-		$statement->bindValue( ':guid', $guid, SQLITE3_TEXT );
-	
-		$attachments = $statement->execute();
-	
-		while ( $attachment = $attachments->fetchArray( SQLITE3_ASSOC ) ) {
-			$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
-			$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-			$insert_statement->bindValue( ':contact', $contactNumber, SQLITE3_TEXT );
-			$insert_statement->bindValue( ':is_from_me', $attachment['is_outgoing'] );
-			$insert_statement->bindValue( ':timestamp', $attachment['date'], SQLITE3_TEXT );
-			$insert_statement->bindValue( ':attachment_mime_type', $attachment['mime_type'], SQLITE3_TEXT );
-			$insert_statement->bindValue( ':content', $attachment['filename'], SQLITE3_TEXT );
-			$insert_statement->execute();
+			
+			if ( $message['cache_has_attachments'] ) {
+				$attachmentStatement = $db->prepare(
+					"SELECT 
+						attachment.filename,
+						attachment.mime_type
+					FROM message_attachment_join LEFT JOIN attachment ON message_attachment_join.attachment_id=attachment.ROWID
+					WHERE message_attachment_join.message_id=:message_id"
+				);
+				$attachmentStatement->bindValue( ':message_id', $message['ROWID'] );
+				
+				$attachmentResults = $attachmentStatement->execute();
+				
+				while ( $attachmentResult = $attachmentResults->fetchArray( SQLITE3_ASSOC ) ) {
+					$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
+					$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+					$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+					$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+					$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
+					$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
+					$insert_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
+					$insert_statement->execute();
+				}
+			}
 		}
 	}
 }
