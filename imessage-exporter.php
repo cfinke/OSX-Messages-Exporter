@@ -98,6 +98,9 @@ if ( ! isset( $options['r'] ) ) {
 		$messages = $statement->execute();
 	
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
+			// 0xfffc is the Object Replacement Character. iMessage uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
+			$message['text'] = str_replace( '￼', '', $message['text'] );
+			
 			if ( empty( trim( $message['text'] ) ) ) {
 				continue;
 			}
