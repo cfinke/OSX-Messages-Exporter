@@ -149,6 +149,8 @@ while ( $row = $contacts->fetchArray() ) {
 	$html_file = $options['o'] . $chat_title . '.html';
 	$attachments_directory = $options['o'] . $chat_title . '/';
 	
+	$conversation_participant_count = substr_count( $chat_title, "," ) + 2;
+	
 	if ( ! file_exists( $html_file ) ) {
 		touch( $html_file );
 	}
@@ -169,6 +171,7 @@ while ( $row = $contacts->fetchArray() ) {
 		body { font-family: "Helvetica Neue", sans-serif; font-size: 10pt; }
 		p { margin: 0; clear: both; }
 		.timestamp { text-align: center; color: #8e8e93; font-variant: small-caps; font-weight: bold; font-size: 9pt; }
+		.byline { text-align: left; color: #8e8e93; font-size: 9pt; padding-left: 1ex; padding-top: 1ex; margin-bottom: 2px; }
 		img { max-width: 75%; }
 		.message { text-align: left; color: black; border-radius: 8px; background-color: #e1e1e1; padding: 6px; display: inline-block; max-width: 75%; margin-bottom: 5px; float: left; }
 		.message[data-from="self"] { text-align: right; background-color: #007aff; color: white; float: right;}
@@ -176,15 +179,17 @@ while ( $row = $contacts->fetchArray() ) {
 		</style>
 	</head>
 	<body>
-'
-	);
+' );
 
 	$last_time = 0;
-
+	$last_participant = null;
+	
 	while ( $message = $messages->fetchArray() ) {
 		$this_time = strtotime( $message['timestamp'] );
 		
 		if ( $this_time - $last_time > ( 60 * 60 ) ) {
+			$last_participant = null;
+
 			file_put_contents(
 				$html_file,
 				"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time ) . '</p><br />' . "\n",
@@ -193,6 +198,16 @@ while ( $row = $contacts->fetchArray() ) {
 		}
 		
 		$last_time = $this_time;
+
+		if ( $conversation_participant_count > 2 && ! $message['is_from_me'] && $message['contact'] != $last_participant ) {
+			$last_participant = $message['contact'];
+			
+			file_put_contents(
+				$html_file,
+				"\t\t\t" . '<p class="byline">' . htmlspecialchars( $message['contact'] ) .'</p>',
+				FILE_APPEND
+			);
+		}
 
 		if ( $message['is_attachment'] ) {
 			if ( ! file_exists( $attachments_directory ) ) {
