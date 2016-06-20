@@ -101,8 +101,8 @@ if ( ! isset( $options['r'] ) ) {
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
 			// 0xfffc is the Object Replacement Character. Messages uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
-			
-			$contact = get_contact_nicename( $message['contact'] );
+
+			$contact = $message['contact'];
 			
 			if ( ! empty( $message['text'] ) ) {
 				$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
@@ -185,6 +185,7 @@ while ( $row = $contacts->fetchArray() ) {
 	
 	while ( $message = $messages->fetchArray() ) {
 		$this_time = strtotime( $message['timestamp'] );
+		$contact_nicename = get_contact_nicename( $message['contact'] );
 		
 		if ( $this_time - $last_time > ( 60 * 60 ) ) {
 			$last_participant = null;
@@ -203,7 +204,7 @@ while ( $row = $contacts->fetchArray() ) {
 			
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="byline">' . htmlspecialchars( $message['contact'] ) .'</p>',
+				"\t\t\t" . '<p class="byline">' . htmlspecialchars( $contact_nicename ) .'</p>',
 				FILE_APPEND
 			);
 		}
