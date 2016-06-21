@@ -16,7 +16,14 @@
 $options = getopt( "o:fhr", array( "output_directory:", "flush", "help", "rebuild" ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
-	die( "Usage: messages-exporter.php [-o|--output_directory /path/to/output/direcotry] [-f|--flush] [-r|--rebuild]\n" );
+	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/direcotry] [-f|--flush] [-r|--rebuild]\n"
+	   . "                             output_directory: a path to the directory where the messages should be saved. Save files in the current directory by default.\n"
+	   . "                             [-f|--flush]\n"
+	   . "                             Flushes the existing backup database, essentially starting over from scratch.\n"
+	   . "                             [-r|--rebuild]\n"
+	   . "                             Rebuild the HTML files from the existing database.\n";
+	echo "\n";
+	die();
 }
 
 if ( ! isset( $options['o'] ) && empty( $options['output_directory'] ) ) {
