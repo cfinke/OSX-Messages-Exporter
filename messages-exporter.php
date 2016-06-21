@@ -211,7 +211,7 @@ while ( $row = $contacts->fetchArray() ) {
 			
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="byline">' . htmlspecialchars( $contact_nicename ) .'</p>',
+				"\t\t\t" . '<p class="byline">' . htmlspecialchars( $contact_nicename ) .'</p>' . "\n",
 				FILE_APPEND
 			);
 		}
