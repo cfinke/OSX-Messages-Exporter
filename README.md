@@ -20,3 +20,12 @@ $ messages-exporter.php [-o|--output_directory output_directory]
                         [-r|--rebuild]
                         Rebuild the HTML files from the existing DB.
 ```
+
+Caveats
+=======
+
+If you run the script, and then delete a conversation in Messages, and then run the script again, the backup of the deleted conversation will not be deleted. This is by design.
+
+Questions?
+==========
+Email me at cfinke@gmail.com.
