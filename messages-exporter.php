@@ -222,14 +222,25 @@ while ( $row = $contacts->fetchArray() ) {
 			}
 			
 			$attachment_filename = basename( $message['content'] );
-			list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
+			
+			if ( strpos( $message['content'], '.' ) !== false ) {
+				list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
+			}
+			else {
+				$extension = null;
+				$filename_base = basename( $message['content'] );
+			}
 
 			$suffix = 1;
 			
 			while ( file_exists( $attachments_directory . $attachment_filename ) ) {
 				++$suffix;
 			
-				$attachment_filename = $filename_base . '-' . $suffix . '.' . $extension;
+				$attachment_filename = $filename_base . '-' . $suffix;
+				
+				if ( $extension ) {
+					$attachment_filename .= '.' . $extension;
+				}
 			}
 			
 			copy( preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] ), $attachments_directory . $attachment_filename );
