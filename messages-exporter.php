@@ -49,6 +49,17 @@ if ( ! file_exists( $options['o'] ) ) {
 	mkdir( $options['o'] );
 }
 
+# Prior to Mac OS X High Sierra  (10.13), time in 'chat.db' was in seconds
+# Starting with High Sierra time in 'chat.db' is in nanoseconds
+# Mac OS X High Sierra started the Darwin 17 major version
+# We assume that all Darwin >= 17 uses the same nanosecond convention
+$time_to_seconds = 1
+$darwin_release = php_uname('r')
+$darwin_nanosecond_release = 17
+if ( $darwin_release >= $darwin_nanosecond_release ){
+	$time_to_seconds = 1E-09;
+}
+
 $database_file = $options['o'] . 'messages-exporter.db';
 
 if ( ! isset( $options['r'] ) ) {
@@ -95,7 +106,7 @@ if ( ! isset( $options['r'] ) ) {
 			"SELECT
 				message.ROWID,
 				message.is_from_me,
-				datetime(message.date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
+				datetime(message.date*time_to_seconds + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
 				message.text,
 				handle.id as contact,
 				message.cache_has_attachments
