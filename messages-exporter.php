@@ -102,11 +102,20 @@ if ( ! isset( $options['r'] ) ) {
 			$chat_title = $contactNumber;
 		}
 
+		# chat.db records the datetime in [nano]seconds
+		#    since 2001-01-01 00:00:00 UTC
+		# Add this reference base time in unixepoch seconds to message.date
+		#    strftime('%s', ...) returns in unixepoch seconds
+		# The use datetime(...) to convert from unixepoch to localtime
+		#  YYYY-MM-DD HH:MM:SS
 		$statement = $db->prepare(
 			"SELECT
 				message.ROWID,
 				message.is_from_me,
-				datetime(message.date*time_to_seconds + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
+				datetime(message.date*time_to_seconds +
+					strftime('%s', '2001-01-01 00:00:00'),
+					'unixepoch',
+					'localtime') as date,
 				message.text,
 				handle.id as contact,
 				message.cache_has_attachments
