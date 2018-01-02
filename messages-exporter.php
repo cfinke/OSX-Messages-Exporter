@@ -112,7 +112,7 @@ if ( ! isset( $options['r'] ) ) {
 			"SELECT
 				message.ROWID,
 				message.is_from_me,
-				datetime(message.date*time_to_seconds +
+				datetime(message.date*:time_to_seconds +
 					strftime('%s', '2001-01-01 00:00:00'),
 					'unixepoch',
 					'localtime') as date,
@@ -122,6 +122,7 @@ if ( ! isset( $options['r'] ) ) {
 			FROM message LEFT JOIN handle ON message.handle_id=handle.ROWID
 			WHERE message.ROWID IN (SELECT message_id FROM chat_message_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
+		$statement->bindValue( ':time_to_seconds', $time_to_seconds );
 	
 		$messages = $statement->execute();
 	
