@@ -53,9 +53,9 @@ if ( ! file_exists( $options['o'] ) ) {
 # Starting with High Sierra time in 'chat.db' is in nanoseconds
 # Mac OS X High Sierra started the Darwin 17 major version
 # We assume that all Darwin >= 17 uses the same nanosecond convention
-$time_to_seconds = 1
-$darwin_release = php_uname('r')
-$darwin_nanosecond_release = 17
+$time_to_seconds = 1;
+$darwin_release = php_uname('r');
+$darwin_nanosecond_release = 17;
 if ( $darwin_release >= $darwin_nanosecond_release ){
 	$time_to_seconds = 1E-09;
 }
