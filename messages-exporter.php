@@ -270,7 +270,7 @@ while ( $row = $contacts->fetchArray() ) {
 		else {
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . htmlspecialchars( trim( $message['content'] ) ) . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>',
 				FILE_APPEND
 			);
 		}
