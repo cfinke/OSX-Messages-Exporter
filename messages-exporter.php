@@ -152,8 +152,28 @@ $contacts = $temp_db->query( "SELECT chat_title FROM messages GROUP BY chat_titl
 
 while ( $row = $contacts->fetchArray() ) {
 	$chat_title = $row['chat_title'];
-	$html_file = $options['o'] . $chat_title . '.html';
-	$attachments_directory = $options['o'] . $chat_title . '/';
+	
+	$chat_title_for_filesystem = $chat_title;
+	
+	// Mac OSX has a 255-char filename limit, so if the number of contacts in a chat
+	// would push the filenames past 255 chars, truncate the filename and add an identifier
+	// to ensure that another chat with the same initial list of contacts doesn't overlap
+	// with it.
+	if ( strlen( $chat_title_for_filesystem . ".html" ) > 255 ) {
+		$unique_chat_hash = "{" . md5( $chat_title ) . "}";
+		
+		// Shorten the filename until there's enough room for the identifying hash and a space.
+		while ( strlen( $chat_title_for_filesystem . ".html" ) > 255 - 1 - strlen( $unique_chat_hash ) ) {
+			$chat_title_for_filesystem = explode( " ", $chat_title_for_filesystem );
+			array_pop( $chat_title_for_filesystem );
+			$chat_title_for_filesystem = join( " ", $chat_title_for_filesystem );
+		}
+		
+		$chat_title_for_filesystem .= " " . $unique_chat_hash;
+	}
+	
+	$html_file = $options['o'] . $chat_title_for_filesystem . '.html';
+	$attachments_directory = $options['o'] . $chat_title_for_filesystem . '/';
 	
 	$conversation_participant_count = substr_count( $chat_title, "," ) + 2;
 	
@@ -248,17 +268,17 @@ while ( $row = $contacts->fetchArray() ) {
 			$html_embed = '';
 
 			if ( strpos( $message['attachment_mime_type'], 'image' ) === 0 ) {
-				$html_embed = '<img src="' . $chat_title . '/' . $attachment_filename . '" />';
+				$html_embed = '<img src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" />';
 			}
 			else {
 				if ( strpos( $message['attachment_mime_type'], 'video' ) === 0 ) {
-					$html_embed = '<video controls><source src="' . $chat_title . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
+					$html_embed = '<video controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
 				}
 				else if ( strpos( $message['attachment_mime_type'], 'audio' ) === 0 ) {
-					$html_embed = '<audio controls><source src="' . $chat_title . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
+					$html_embed = '<audio controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
 				}
 
-				$html_embed .= '<a href="' . $chat_title . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
+				$html_embed .= '<a href="' . $chat_title_for_filesystem . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
 			}
 			
 			file_put_contents(
