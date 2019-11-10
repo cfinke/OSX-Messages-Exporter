@@ -93,30 +93,73 @@ if ( ! isset( $options['r'] ) ) {
 
 		$statement = $db->prepare(
 			"SELECT
+				*,
 				message.ROWID,
 				message.is_from_me,
-				datetime(message.date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') as date,
 				message.text,
 				handle.id as contact,
-				message.cache_has_attachments
+				message.cache_has_attachments,
+				datetime(message.date/1000000000 + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') AS date_from_nanoseconds,
+				datetime(message.date + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') date_from_seconds
 			FROM message LEFT JOIN handle ON message.handle_id=handle.ROWID
 			WHERE message.ROWID IN (SELECT message_id FROM chat_message_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
-	
+		
 		$messages = $statement->execute();
 	
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
 			// 0xfffc is the Object Replacement Character. Messages uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 
-			$contact = $message['contact'];
-			
 			if ( ! empty( $message['text'] ) ) {
+				// Apple switched to storing a nanosecond value in the date field at some point.
+				// Due to SQLite not being able to handle converting huge timestamp values to dates,
+				// all dates would have been stored as some time on -1413-03-01, with no way to retrieve
+				// the original date.
+				//
+				// What we can do is check if we've improperly stored the date for this message, and then
+				// delete the bad record and insert a new record.  The "ON CONFLICT REPLACE" clause won't
+				// do this automatically, because the timestamp is part of the unique index.
+				//
+				// Depending on the current environment, date_from_seconds might be right or date_from_nanoseconds might be right.
+				// If date_from_seconds is right, then this DB shouldn't have been affected by the bug.
+				// If date_from_nanoseconds is right, then we need to delete any records that used date_from_seconds.
+				// Or, we can just delete any records that used date_from_seconds anyway, since it'll just be re-inserted in a moment.
+				//
+				// If dates are still being stored as seconds (and not nanoseconds), then date_from_nanoseconds will be very close to 978307200 (January 1, 2001).
+				
+				if ( strtotime( $message['date_from_nanoseconds'] ) - 978307200 < 1000 ) {
+					$correct_date = $message['date_from_seconds'];
+				}
+				else {
+					$correct_date = $message['date_from_nanoseconds'];
+				}
+
+				if ( $correct_date != $message['date_from_seconds'] ) {
+					$delete_old_date_statement = $temp_db->prepare(
+						"DELETE FROM messages
+						WHERE 
+							chat_title=:chat_title AND "
+							. ( $message['is_from_me'] ? " is_from_me=1 AND " : " contact=:contact AND is_from_me=0 AND " )
+							. "timestamp=:timestamp AND
+							content=:content" );
+					
+					$delete_old_date_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+					
+					if ( ! $message['is_from_me'] ) {
+						$delete_old_date_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+					}
+
+					$delete_old_date_statement->bindValue( ':timestamp', $message['date_from_seconds'], SQLITE3_TEXT );
+					$delete_old_date_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
+					$delete_old_date_statement->execute();
+				}
+
 				$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
 				$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-				$insert_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
+				$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
 				$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-				$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
+				$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
 				$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
 				$insert_statement->execute();
 			}
@@ -125,7 +168,8 @@ if ( ! isset( $options['r'] ) ) {
 				$attachmentStatement = $db->prepare(
 					"SELECT 
 						attachment.filename,
-						attachment.mime_type
+						attachment.mime_type,
+						*
 					FROM message_attachment_join LEFT JOIN attachment ON message_attachment_join.attachment_id=attachment.ROWID
 					WHERE message_attachment_join.message_id=:message_id"
 				);
@@ -134,11 +178,38 @@ if ( ! isset( $options['r'] ) ) {
 				$attachmentResults = $attachmentStatement->execute();
 				
 				while ( $attachmentResult = $attachmentResults->fetchArray( SQLITE3_ASSOC ) ) {
+					if ( empty( $attachmentResult['filename'] ) ) {
+						// Could be something like an Apple Pay request.
+						// $attachmentResult['attribution_info'] has a hint: bplist00?TnameYbundle-idiApple?Pay_vcom.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.PassbookUIService.PeerPaymentMessage...
+						// @todo
+					}
+					
+					if ( $correct_date != $message['date_from_seconds'] ) {
+						// See the comment above for why we do this DELETE.
+						$delete_old_date_statement = $temp_db->prepare(
+							"DELETE FROM messages
+							WHERE 
+								chat_title=:chat_title AND "
+								. ( $message['is_from_me'] ? " is_from_me=1 AND " : " contact=:contact AND is_from_me=0 AND " )
+								. "timestamp=:timestamp AND
+								content=:content" );
+					
+						$delete_old_date_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+					
+						if ( ! $message['is_from_me'] ) {
+							$delete_old_date_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+						}
+
+						$delete_old_date_statement->bindValue( ':timestamp', $message['date_from_seconds'], SQLITE3_TEXT );
+						$delete_old_date_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
+						$delete_old_date_statement->execute();
+					}
+
 					$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
 					$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-					$insert_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
+					$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
 					$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-					$insert_statement->bindValue( ':timestamp', $message['date'], SQLITE3_TEXT );
+					$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
 					$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
 					$insert_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
 					$insert_statement->execute();
@@ -212,8 +283,14 @@ while ( $row = $contacts->fetchArray() ) {
 	
 	while ( $message = $messages->fetchArray() ) {
 		$this_time = strtotime( $message['timestamp'] );
-		$contact_nicename = get_contact_nicename( $message['contact'] );
-		
+
+		if ( $this_time < 0 ) {
+			// There was a bug present from when Apple started storing timestamps as nanoseconds instead of seconds, so the stored
+			// timestamps were all from the year -1413. There's no way to fix it without re-importing the messages. Sorry.
+			$this_time = 0;
+			$message['timestamp'] = "Unknown Date";
+		}
+
 		if ( $this_time - $last_time > ( 60 * 60 ) ) {
 			$last_participant = null;
 
@@ -231,7 +308,7 @@ while ( $row = $contacts->fetchArray() ) {
 			
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="byline">' . htmlspecialchars( $contact_nicename ) .'</p>' . "\n",
+				"\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n",
 				FILE_APPEND
 			);
 		}
@@ -241,61 +318,66 @@ while ( $row = $contacts->fetchArray() ) {
 				mkdir( $attachments_directory );
 			}
 			
-			$attachment_filename = basename( $message['content'] );
-			
-			$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
-			
-			if ( ! file_exists( $file_to_copy ) ) {
-				$html_embed = '[File Not Found: ' . $attachment_filename . ']';
+			if ( empty( $message['content'] ) ) {
+				$html_embed = '[Unknown Message]';
 			}
 			else {
-				if ( strpos( $message['content'], '.' ) !== false ) {
-					list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
+				$attachment_filename = basename( $message['content'] );
+			
+				$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
+			
+				if ( ! file_exists( $file_to_copy ) ) {
+					$html_embed = '[File Not Found: ' . $attachment_filename . ']';
 				}
 				else {
-					$extension = null;
-					$filename_base = basename( $message['content'] );
-				}
+					if ( strpos( $message['content'], '.' ) !== false ) {
+						list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
+					}
+					else {
+						$extension = null;
+						$filename_base = basename( $message['content'] );
+					}
 
-				if (
-				       file_exists( $attachments_directory . $attachment_filename )
-					&& sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-					&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
-					) {
-					// They're the same file. We've probably already run this script on the message that includes this file.
-				}
-				else {
-					$suffix = 1;
+					if (
+					       file_exists( $attachments_directory . $attachment_filename )
+						&& sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+						&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+						) {
+						// They're the same file. We've probably already run this script on the message that includes this file.
+					}
+					else {
+						$suffix = 1;
 
-					// If a file already exists where we want to save this attachment, add a suffix like -1, -2, -3, etc. until we get a unique filename.
-					// But don't copy the file if the destination file is the same as the one we're copying.
-					while ( file_exists( $attachments_directory . $attachment_filename ) ) {
-						++$suffix;
+						// If a file already exists where we want to save this attachment, add a suffix like -1, -2, -3, etc. until we get a unique filename.
+						// But don't copy the file if the destination file is the same as the one we're copying.
+						while ( file_exists( $attachments_directory . $attachment_filename ) ) {
+							++$suffix;
 
-						$attachment_filename = $filename_base . '-' . $suffix;
+							$attachment_filename = $filename_base . '-' . $suffix;
 
-						if ( $extension ) {
-							$attachment_filename .= '.' . $extension;
+							if ( $extension ) {
+								$attachment_filename .= '.' . $extension;
+							}
 						}
+
+						copy( $file_to_copy, $attachments_directory . $attachment_filename );
 					}
 
-					copy( $file_to_copy, $attachments_directory . $attachment_filename );
-				}
+					$html_embed = '';
 
-				$html_embed = '';
-
-				if ( strpos( $message['attachment_mime_type'], 'image' ) === 0 ) {
-					$html_embed = '<img src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" />';
-				}
-				else {
-					if ( strpos( $message['attachment_mime_type'], 'video' ) === 0 ) {
-						$html_embed = '<video controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
+					if ( strpos( $message['attachment_mime_type'], 'image' ) === 0 ) {
+						$html_embed = '<img src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" />';
 					}
-					else if ( strpos( $message['attachment_mime_type'], 'audio' ) === 0 ) {
-						$html_embed = '<audio controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
-					}
+					else {
+						if ( strpos( $message['attachment_mime_type'], 'video' ) === 0 ) {
+							$html_embed = '<video controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
+						}
+						else if ( strpos( $message['attachment_mime_type'], 'audio' ) === 0 ) {
+							$html_embed = '<audio controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
+						}
 
-					$html_embed .= '<a href="' . $chat_title_for_filesystem . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
+						$html_embed .= '<a href="' . $chat_title_for_filesystem . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
+					}
 				}
 			}
 			
