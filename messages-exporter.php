@@ -243,6 +243,8 @@ while ( $row = $contacts->fetchArray() ) {
 			
 			$attachment_filename = basename( $message['content'] );
 			
+			$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
+			
 			if ( strpos( $message['content'], '.' ) !== false ) {
 				list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
 			}
@@ -253,17 +255,28 @@ while ( $row = $contacts->fetchArray() ) {
 
 			$suffix = 1;
 			
-			while ( file_exists( $attachments_directory . $attachment_filename ) ) {
-				++$suffix;
-			
-				$attachment_filename = $filename_base . '-' . $suffix;
-				
-				if ( $extension ) {
-					$attachment_filename .= '.' . $extension;
-				}
+			if (
+			       file_exists( $attachments_directory . $attachment_filename )
+				&& sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+				&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+				) {
+				// They're the same file. We've probably already run this script on the message that includes this file.
 			}
-			
-			copy( preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] ), $attachments_directory . $attachment_filename );
+			else {
+				// If a file already exists where we want to save this attachment, add a suffix like -1, -2, -3, etc. until we get a unique filename.
+				// But don't copy the file if the destination file is the same as the one we're copying.
+				while ( file_exists( $attachments_directory . $attachment_filename ) ) {
+					++$suffix;
+
+					$attachment_filename = $filename_base . '-' . $suffix;
+
+					if ( $extension ) {
+						$attachment_filename .= '.' . $extension;
+					}
+				}
+
+				copy( $file_to_copy, $attachments_directory . $attachment_filename );
+			}
 
 			$html_embed = '';
 
