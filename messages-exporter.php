@@ -325,8 +325,10 @@ while ( $row = $contacts->fetchArray() ) {
 				$attachment_filename = basename( $message['content'] );
 			
 				$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
-			
-				if ( ! file_exists( $file_to_copy ) ) {
+				
+				// If we previously saved the attachment but it's no longer available, don't show "File Not Found".
+				// @todo It's possible that we've saved a file with the same filename as this one but it's not the same file.
+				if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
 					$html_embed = '[File Not Found: ' . $attachment_filename . ']';
 				}
 				else {
@@ -339,9 +341,13 @@ while ( $row = $contacts->fetchArray() ) {
 					}
 
 					if (
-					       file_exists( $attachments_directory . $attachment_filename )
-						&& sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-						&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+					       // We previously saved the attachment but it's no longer available.
+					       ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
+					       ||
+					       ( file_exists( $attachments_directory . $attachment_filename )
+					         && sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+					         && filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+						   )
 						) {
 						// They're the same file. We've probably already run this script on the message that includes this file.
 					}
