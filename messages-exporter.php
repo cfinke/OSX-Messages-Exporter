@@ -65,7 +65,7 @@ $temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)"
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
 
 if ( ! isset( $options['r'] ) ) {
-	$db = new SQLite3( $_SERVER['HOME'] . "/Library/Messages/chat.db" );
+	$db = new SQLite3( $_SERVER['HOME'] . "/Library/Messages/chat.db", SQLITE3_OPEN_READONLY );
 	$chats = $db->query( "SELECT * FROM chat" );
 
 	while ( $row = $chats->fetchArray( SQLITE3_ASSOC ) ) {
@@ -430,7 +430,7 @@ function get_contact_nicename( $contact_notnice_name ) {
 		return $contact_nicename_map[ $contact_notnice_name ];
 	}
 	
-	$contacts_db = new SQLite3( $address_book_db_file );
+	$contacts_db = new SQLite3( $address_book_db_file, SQLITE3_OPEN_READONLY );
 	
 	if ( strpos( $contact_notnice_name, '@' ) !== false ) {
 		// Assume an email address.
