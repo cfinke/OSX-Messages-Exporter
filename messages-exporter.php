@@ -395,7 +395,8 @@ while ( $row = $contacts->fetchArray() ) {
 				$html_embed = '[Unknown Message]';
 			}
 			else {
-				$attachment_filename = basename( $message['content'] );
+				// Give the attachment filename a date-based prefix to avoid filename collisions if this backup is ever migrated to another machine.
+				$attachment_filename = date( 'Y-m-d H i s', strtotime( $message['timestamp'] ) ) . ' - ' . basename( $message['content'] );
 
 				$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
 
