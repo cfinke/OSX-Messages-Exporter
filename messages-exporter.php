@@ -15,7 +15,7 @@
 
 define( 'VERSION', 2 );
 
-$options = getopt( "o:fhrd:", array( "output_directory:", "flush", "help", "rebuild", "database:" ) );
+$options = getopt( "o:fhrd:", array( "output_directory:", "flush", "help", "rebuild", "database:", "date-start:", "date-stop:", ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/directory] [-f|--flush] [-r|--rebuild] [-d|--database /path/to/chat/database]\n"
@@ -26,6 +26,10 @@ if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 	   . "                             Rebuild the HTML files from the existing database.\n"
 	   . "                             [-d|--database /path/to/chat/database]\n"
 	   . "                             You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
+	   . "                             [--date-start YYYY-MM-DD]\n"
+	   . "                             Optionally, specify the first date that should be queried from the Messages database.\n"
+	   . "                             [--date-stop YYYY-MM-DD]\n"
+	   . "                             Optionally, specify the last date that should be queried from the Messages database.\n"
 	   . "";
 	echo "\n";
 	die();
@@ -232,30 +236,38 @@ if ( ! isset( $options['r'] ) ) {
 			// 0xfffc is the Object Replacement Character. Messages uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 
+			// Apple switched to storing a nanosecond value in the date field at some point.
+			// Due to SQLite not being able to handle converting huge timestamp values to dates,
+			// all dates would have been stored as some time on -1413-03-01, with no way to retrieve
+			// the original date.
+			//
+			// What we can do is check if we've improperly stored the date for this message, and then
+			// delete the bad record and insert a new record.  The "ON CONFLICT REPLACE" clause won't
+			// do this automatically, because the timestamp is part of the unique index.
+			//
+			// Depending on the current environment, date_from_seconds might be right or date_from_nanoseconds might be right.
+			// If date_from_seconds is right, then this DB shouldn't have been affected by the bug.
+			// If date_from_nanoseconds is right, then we need to delete any records that used date_from_seconds.
+			// Or, we can just delete any records that used date_from_seconds anyway, since it'll just be re-inserted in a moment.
+			//
+			// If dates are still being stored as seconds (and not nanoseconds), then date_from_nanoseconds will be very close to 978307200 (January 1, 2001).
+
+			if ( strtotime( $message['date_from_nanoseconds'] ) - 978307200 < 1000 ) {
+				$correct_date = $message['date_from_seconds'];
+			}
+			else {
+				$correct_date = $message['date_from_nanoseconds'];
+			}
+
+			if ( ! empty( $options['date-start'] ) && $correct_date < $options['date-start'] . " 00:00:00" ) {
+				continue;
+			}
+
+			if ( ! empty( $options['date-stop'] ) && $correct_date > $options['date-stop'] . " 23:59:59" ) {
+				continue;
+			}
+
 			if ( ! empty( $message['text'] ) ) {
-				// Apple switched to storing a nanosecond value in the date field at some point.
-				// Due to SQLite not being able to handle converting huge timestamp values to dates,
-				// all dates would have been stored as some time on -1413-03-01, with no way to retrieve
-				// the original date.
-				//
-				// What we can do is check if we've improperly stored the date for this message, and then
-				// delete the bad record and insert a new record.  The "ON CONFLICT REPLACE" clause won't
-				// do this automatically, because the timestamp is part of the unique index.
-				//
-				// Depending on the current environment, date_from_seconds might be right or date_from_nanoseconds might be right.
-				// If date_from_seconds is right, then this DB shouldn't have been affected by the bug.
-				// If date_from_nanoseconds is right, then we need to delete any records that used date_from_seconds.
-				// Or, we can just delete any records that used date_from_seconds anyway, since it'll just be re-inserted in a moment.
-				//
-				// If dates are still being stored as seconds (and not nanoseconds), then date_from_nanoseconds will be very close to 978307200 (January 1, 2001).
-
-				if ( strtotime( $message['date_from_nanoseconds'] ) - 978307200 < 1000 ) {
-					$correct_date = $message['date_from_seconds'];
-				}
-				else {
-					$correct_date = $message['date_from_nanoseconds'];
-				}
-
 				if ( $correct_date != $message['date_from_seconds'] ) {
 					$delete_old_date_statement = $temp_db->prepare(
 						"DELETE FROM messages
