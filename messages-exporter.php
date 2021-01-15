@@ -193,7 +193,7 @@ if ( ! isset( $options['r'] ) ) {
 				// Or, we can just delete any records that used date_from_seconds anyway, since it'll just be re-inserted in a moment.
 				//
 				// If dates are still being stored as seconds (and not nanoseconds), then date_from_nanoseconds will be very close to 978307200 (January 1, 2001).
-				
+
 				if ( strtotime( $message['date_from_nanoseconds'] ) - 978307200 < 1000 ) {
 					$correct_date = $message['date_from_seconds'];
 				}
@@ -209,9 +209,9 @@ if ( ! isset( $options['r'] ) ) {
 							. ( $message['is_from_me'] ? " is_from_me=1 AND " : " contact=:contact AND is_from_me=0 AND " )
 							. "timestamp=:timestamp AND
 							content=:content" );
-					
+
 					$delete_old_date_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-					
+
 					if ( ! $message['is_from_me'] ) {
 						$delete_old_date_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
 					}
@@ -229,7 +229,7 @@ if ( ! isset( $options['r'] ) ) {
 				$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
 				$insert_statement->execute();
 			}
-			
+
 			if ( $message['cache_has_attachments'] ) {
 				$attachmentStatement = $db->prepare(
 					"SELECT 
@@ -240,16 +240,16 @@ if ( ! isset( $options['r'] ) ) {
 					WHERE message_attachment_join.message_id=:message_id"
 				);
 				$attachmentStatement->bindValue( ':message_id', $message['ROWID'] );
-				
+
 				$attachmentResults = $attachmentStatement->execute();
-				
+
 				while ( $attachmentResult = $attachmentResults->fetchArray( SQLITE3_ASSOC ) ) {
 					if ( empty( $attachmentResult['filename'] ) ) {
 						// Could be something like an Apple Pay request.
 						// $attachmentResult['attribution_info'] has a hint: bplist00?TnameYbundle-idiApple?Pay_vcom.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.PassbookUIService.PeerPaymentMessage...
 						// @todo
 					}
-					
+
 					if ( $correct_date != $message['date_from_seconds'] ) {
 						// See the comment above for why we do this DELETE.
 						$delete_old_date_statement = $temp_db->prepare(
@@ -259,9 +259,9 @@ if ( ! isset( $options['r'] ) ) {
 								. ( $message['is_from_me'] ? " is_from_me=1 AND " : " contact=:contact AND is_from_me=0 AND " )
 								. "timestamp=:timestamp AND
 								content=:content" );
-					
+
 						$delete_old_date_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-					
+
 						if ( ! $message['is_from_me'] ) {
 							$delete_old_date_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
 						}
@@ -303,7 +303,7 @@ while ( $row = $contacts->fetchArray() ) {
 	$messages_statement = $temp_db->prepare( "SELECT * FROM messages WHERE chat_title=:chat_title ORDER BY timestamp ASC" );
 	$messages_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
 	$messages = $messages_statement->execute();
-	
+
 	file_put_contents(
 		$html_file,
 		'<!doctype html>
@@ -312,7 +312,7 @@ while ( $row = $contacts->fetchArray() ) {
 		<meta charset="UTF-8">
 		<title>Conversation: ' . $chat_title . '</title>
 		<style type="text/css">
-		
+
 		body { font-family: "Helvetica Neue", sans-serif; font-size: 10pt; }
 		p { margin: 0; clear: both; }
 		.timestamp { text-align: center; color: #8e8e93; font-variant: small-caps; font-weight: bold; font-size: 9pt; }
@@ -320,7 +320,7 @@ while ( $row = $contacts->fetchArray() ) {
 		img { max-width: 100%; }
 		.message { text-align: left; color: black; border-radius: 8px; background-color: #e1e1e1; padding: 6px; display: inline-block; max-width: 75%; margin-bottom: 5px; float: left; }
 		.message[data-from="self"] { text-align: right; background-color: #007aff; color: white; float: right;}
-		
+
 		</style>
 	</head>
 	<body>
@@ -328,7 +328,7 @@ while ( $row = $contacts->fetchArray() ) {
 
 	$last_time = 0;
 	$last_participant = null;
-	
+
 	while ( $message = $messages->fetchArray() ) {
 		$this_time = strtotime( $message['timestamp'] );
 
@@ -348,12 +348,12 @@ while ( $row = $contacts->fetchArray() ) {
 				FILE_APPEND
 			);
 		}
-		
+
 		$last_time = $this_time;
 
 		if ( $conversation_participant_count > 2 && ! $message['is_from_me'] && $message['contact'] != $last_participant ) {
 			$last_participant = $message['contact'];
-			
+
 			file_put_contents(
 				$html_file,
 				"\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n",
@@ -365,15 +365,15 @@ while ( $row = $contacts->fetchArray() ) {
 			if ( ! file_exists( $attachments_directory ) ) {
 				mkdir( $attachments_directory );
 			}
-			
+
 			if ( empty( $message['content'] ) ) {
 				$html_embed = '[Unknown Message]';
 			}
 			else {
 				$attachment_filename = basename( $message['content'] );
-			
+
 				$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
-				
+
 				// If we previously saved the attachment but it's no longer available, don't show "File Not Found".
 				// @todo It's possible that we've saved a file with the same filename as this one but it's not the same file.
 				if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
@@ -434,7 +434,7 @@ while ( $row = $contacts->fetchArray() ) {
 					}
 				}
 			}
-			
+
 			file_put_contents(
 				$html_file,
 				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
@@ -448,30 +448,30 @@ while ( $row = $contacts->fetchArray() ) {
 				FILE_APPEND
 			);
 		}
-		
+
 		file_put_contents(
 			$html_file,
 			"<br />\n",
 			FILE_APPEND
 		);
 	}
-	
+
 	file_put_contents( $html_file, "\t</body>\n</html>", FILE_APPEND );
 }
 
 function get_contact_nicename( $contact_notnice_name ) {
 	static $contact_nicename_map = array();
-	
+
 	if ( ! $contact_notnice_name ) {
 		return $contact_notnice_name;
 	}
-	
+
 	if ( isset( $contact_nicename_map[ $contact_notnice_name ] ) ) {
 		return $contact_nicename_map[ $contact_notnice_name ];
 	}
-	
+
 	$contact_nicename_map[ $contact_notnice_name ] = $contact_notnice_name;
-	
+
 	// These are SQLite files that are synced with iCloud, I think.
 	$possible_address_book_db_files = glob( $_SERVER['HOME'] . "/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb" );
 
@@ -485,7 +485,7 @@ function get_contact_nicename( $contact_notnice_name ) {
 		}
 
 		$contacts_db = new SQLite3( $address_book_db_file, SQLITE3_OPEN_READONLY );
-	
+
 		if ( strpos( $contact_notnice_name, '@' ) !== false ) {
 			// Assume an email address.
 			$nameStatement = $contacts_db->prepare(
@@ -497,7 +497,7 @@ function get_contact_nicename( $contact_notnice_name ) {
 				WHERE
 					ZABCDEMAILADDRESS.ZADDRESS=:address"
 			);
-		
+
 			$nameStatement->bindValue( ':address', $contact_notnice_name );
 			$nameResults = $nameStatement->execute();
 
@@ -518,10 +518,10 @@ function get_contact_nicename( $contact_notnice_name ) {
 			$forms[] = preg_replace( '/[^0-9]/', '', preg_replace( '/^\+1/', '', $contact_notnice_name ) );
 
 			$forms = array_unique( $forms );
-	
+
 			$phoneNumberStatement = $contacts_db->prepare( "SELECT ZOWNER, ZFULLNUMBER FROM ZABCDPHONENUMBER" );
 			$phoneNumberResults = $phoneNumberStatement->execute();
-	
+
 			while ( $phoneNumberResult = $phoneNumberResults->fetchArray( SQLITE3_ASSOC ) ) {
 				if (
 					in_array( $phoneNumberResult['ZFULLNUMBER'], $forms )
@@ -533,10 +533,10 @@ function get_contact_nicename( $contact_notnice_name ) {
 					);
 					$nameStatement->bindValue( ':zowner', $phoneNumberResult['ZOWNER'] );
 					$nameResults = $nameStatement->execute();
-			
+
 					while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
 						$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
-					
+
 						if ( $nameResult['ZORGANIZATION'] ) {
 							if ( ! $name ) {
 								$name = $nameResult['ZORGANIZATION'];
@@ -545,7 +545,7 @@ function get_contact_nicename( $contact_notnice_name ) {
 								$name .= ' (' . $nameResult['ZORGANIZATION'] . ')';
 							}
 						}
-				
+
 						if ( $name ) {
 							$contact_nicename_map[ $contact_notnice_name ] = $name;
 							break 3;
