@@ -13,15 +13,18 @@
 #                         [-r|--rebuild]
 #                         Rebuild the HTML files from the existing DB.
 
-$options = getopt( "o:fhr", array( "output_directory:", "flush", "help", "rebuild" ) );
+$options = getopt( "o:fhrd:", array( "output_directory:", "flush", "help", "rebuild", "database:" ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
-	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/direcotry] [-f|--flush] [-r|--rebuild]\n"
+	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/directory] [-f|--flush] [-r|--rebuild] [-d|--database /path/to/chat/database]\n"
 	   . "                             output_directory: a path to the directory where the messages should be saved. Save files in the current directory by default.\n"
 	   . "                             [-f|--flush]\n"
 	   . "                             Flushes the existing backup database, essentially starting over from scratch.\n"
 	   . "                             [-r|--rebuild]\n"
-	   . "                             Rebuild the HTML files from the existing database.\n";
+	   . "                             Rebuild the HTML files from the existing database.\n"
+	   . "                             [-d|--database /path/to/chat/database]\n"
+	   . "                             You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
+	   . "";
 	echo "\n";
 	die();
 }
@@ -33,12 +36,24 @@ else if ( ! empty( $options['output_directory'] ) ) {
 	$options['o'] = $options['output_directory'];
 }
 
+if ( ! empty( $options['database'] ) ) {
+	$options['d'] = $options['database'];
+}
+
 if ( ! isset( $options['f'] ) && isset( $options['flush'] ) ) {
 	$options['f'] = true;
 }
 
 if ( ! isset( $options['r'] ) && isset( $options['rebuild'] ) ) {
 	$options['r'] = true;
+}
+
+if ( isset( $options['o'] ) ) {
+	$options['o'] = preg_replace( '/^~/', $_SERVER['HOME'], $options['o'] );
+}
+
+if ( isset( $options['d'] ) ) {
+	$options['d'] = preg_replace( '/^~/', $_SERVER['HOME'], $options['d'] );
 }
 
 # Ensure a trailing slash on the output directory.
@@ -67,7 +82,17 @@ $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timesta
 $updated_contacts_memo = array();
 
 if ( ! isset( $options['r'] ) ) {
-	$db = new SQLite3( $_SERVER['HOME'] . "/Library/Messages/chat.db", SQLITE3_OPEN_READONLY );
+	$chat_db_path = $_SERVER['HOME'] . "/Library/Messages/chat.db";
+
+	if ( isset( $options['d'] ) ) {
+		$chat_db_path = $options['d'];
+	}
+
+	if ( ! file_exists( $chat_db_path ) ) {
+		die( "Error: The file " . $chat_db_path . " does not exist.\n" );
+	}
+
+	$db = new SQLite3( $chat_db_path, SQLITE3_OPEN_READONLY );
 	$chats = $db->query( "SELECT * FROM chat" );
 
 	while ( $row = $chats->fetchArray( SQLITE3_ASSOC ) ) {
@@ -566,6 +591,9 @@ function get_chat_title_for_filesystem( $chat_title ) {
 	// would push the filenames past 255 chars, truncate the filename and add an identifier
 	// to ensure that another chat with the same initial list of contacts doesn't overlap
 	// with it.
+
+	$chat_title_for_filesystem = str_replace( array( ":", "/" ), "-", $chat_title_for_filesystem );
+
 	if ( strlen( $chat_title_for_filesystem . ".html" ) > 255 ) {
 		$unique_chat_hash = "{" . md5( $chat_title ) . "}";
 
