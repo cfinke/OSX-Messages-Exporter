@@ -424,77 +424,84 @@ function get_contact_nicename( $contact_notnice_name ) {
 	
 	$contact_nicename_map[ $contact_notnice_name ] = $contact_notnice_name;
 	
-	$address_book_db_file = $_SERVER['HOME'] . "/Library/Application Support/AddressBook/AddressBook-v22.abcddb";
+	// These are SQLite files that are synced with iCloud, I think.
+	$possible_address_book_db_files = glob( $_SERVER['HOME'] . "/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb" );
+
+	// But check the local contacts DB first.
+	array_unshift( $possible_address_book_db_files, $_SERVER['HOME'] . "/Library/Application Support/AddressBook/AddressBook-v22.abcddb" );
+
+	foreach ( $possible_address_book_db_files as $address_book_db_file ) {
+		if ( ! file_exists( $address_book_db_file ) ) {
+			echo $address_book_db_file . " does not exist.\n";
+			continue;
+		}
+
+		$contacts_db = new SQLite3( $address_book_db_file, SQLITE3_OPEN_READONLY );
 	
-	if ( ! file_exists( $address_book_db_file ) ) {
-		return $contact_nicename_map[ $contact_notnice_name ];
-	}
-	
-	$contacts_db = new SQLite3( $address_book_db_file, SQLITE3_OPEN_READONLY );
-	
-	if ( strpos( $contact_notnice_name, '@' ) !== false ) {
-		// Assume an email address.
-		$nameStatement = $contacts_db->prepare(
-			"SELECT
-				ZABCDRECORD.ZFIRSTNAME,
-				ZABCDRECORD.ZLASTNAME
-			FROM ZABCDEMAILADDRESS
-				LEFT JOIN ZABCDRECORD ON ZABCDEMAILADDRESS.ZOWNER=ZABCDRECORD.Z_PK
-			WHERE
-				ZABCDEMAILADDRESS.ZADDRESS=:address"
-		);
+		if ( strpos( $contact_notnice_name, '@' ) !== false ) {
+			// Assume an email address.
+			$nameStatement = $contacts_db->prepare(
+				"SELECT
+					ZABCDRECORD.ZFIRSTNAME,
+					ZABCDRECORD.ZLASTNAME
+				FROM ZABCDEMAILADDRESS
+					LEFT JOIN ZABCDRECORD ON ZABCDEMAILADDRESS.ZOWNER=ZABCDRECORD.Z_PK
+				WHERE
+					ZABCDEMAILADDRESS.ZADDRESS=:address"
+			);
 		
-		$nameStatement->bindValue( ':address', $contact_notnice_name );
-		$nameResults = $nameStatement->execute();
+			$nameStatement->bindValue( ':address', $contact_notnice_name );
+			$nameResults = $nameStatement->execute();
 
-		while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
-			$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
+			while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
+				$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
 
-			if ( $name ) {
-				$contact_nicename_map[ $contact_notnice_name ] = $name;
-				break;
+				if ( $name ) {
+					$contact_nicename_map[ $contact_notnice_name ] = $name;
+					break 2;
+				}
 			}
 		}
-	}
-	else {
-		// Assume a phone number.
-		$forms = array();
-		$forms[] = $contact_notnice_name;
-		$forms[] = preg_replace( '/[^0-9]/', '', $contact_notnice_name );
-		$forms[] = preg_replace( '/[^0-9]/', '', preg_replace( '/^\+1/', '', $contact_notnice_name ) );
+		else {
+			// Assume a phone number.
+			$forms = array();
+			$forms[] = $contact_notnice_name;
+			$forms[] = preg_replace( '/[^0-9]/', '', $contact_notnice_name );
+			$forms[] = preg_replace( '/[^0-9]/', '', preg_replace( '/^\+1/', '', $contact_notnice_name ) );
 
-		$forms = array_unique( $forms );
+			$forms = array_unique( $forms );
 	
-		$phoneNumberStatement = $contacts_db->prepare( "SELECT ZOWNER, ZFULLNUMBER FROM ZABCDPHONENUMBER" );
-		$phoneNumberResults = $phoneNumberStatement->execute();
+			$phoneNumberStatement = $contacts_db->prepare( "SELECT ZOWNER, ZFULLNUMBER FROM ZABCDPHONENUMBER" );
+			$phoneNumberResults = $phoneNumberStatement->execute();
 	
-		while ( $phoneNumberResult = $phoneNumberResults->fetchArray( SQLITE3_ASSOC ) ) {
-			if (
-				in_array( $phoneNumberResult['ZFULLNUMBER'], $forms )
-				|| in_array( preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ), $forms )
-				|| in_array( preg_replace( '/^\+1/', '', preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ) ), $forms )
-				) {
-				$nameStatement = $contacts_db->prepare(
-					"SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME, ZABCDRECORD.ZORGANIZATION FROM ZABCDRECORD WHERE Z_PK = :zowner"
-				);
-				$nameStatement->bindValue( ':zowner', $phoneNumberResult['ZOWNER'] );
-				$nameResults = $nameStatement->execute();
+			while ( $phoneNumberResult = $phoneNumberResults->fetchArray( SQLITE3_ASSOC ) ) {
+				if (
+					in_array( $phoneNumberResult['ZFULLNUMBER'], $forms )
+					|| in_array( preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ), $forms )
+					|| in_array( preg_replace( '/^\+1/', '', preg_replace( '/[^0-9]/', '', $phoneNumberResult['ZFULLNUMBER'] ) ), $forms )
+					) {
+					$nameStatement = $contacts_db->prepare(
+						"SELECT ZABCDRECORD.ZFIRSTNAME, ZABCDRECORD.ZLASTNAME, ZABCDRECORD.ZORGANIZATION FROM ZABCDRECORD WHERE Z_PK = :zowner"
+					);
+					$nameStatement->bindValue( ':zowner', $phoneNumberResult['ZOWNER'] );
+					$nameResults = $nameStatement->execute();
 			
-				while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
-					$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
+					while ( $nameResult = $nameResults->fetchArray( SQLITE3_ASSOC ) ) {
+						$name = trim( $nameResult['ZFIRSTNAME'] . ' ' . $nameResult['ZLASTNAME'] );
 					
-					if ( $nameResult['ZORGANIZATION'] ) {
-						if ( ! $name ) {
-							$name = $nameResult['ZORGANIZATION'];
+						if ( $nameResult['ZORGANIZATION'] ) {
+							if ( ! $name ) {
+								$name = $nameResult['ZORGANIZATION'];
+							}
+							else {
+								$name .= ' (' . $nameResult['ZORGANIZATION'] . ')';
+							}
 						}
-						else {
-							$name .= ' (' . $nameResult['ZORGANIZATION'] . ')';
-						}
-					}
 				
-					if ( $name ) {
-						$contact_nicename_map[ $contact_notnice_name ] = $name;
-						break 2;
+						if ( $name ) {
+							$contact_nicename_map[ $contact_notnice_name ] = $name;
+							break 3;
+						}
 					}
 				}
 			}
