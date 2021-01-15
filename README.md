@@ -4,7 +4,7 @@ Exports Messages' conversations to HTML files. This includes iMessages, SMSs, an
 
 This script processes all of the existing conversations in the Messages app, logs them to a separate backup database in your specified output directory, and then generates HTML files for each conversation, mimicking the look and feel of Messages conversations. (See [example.html](example.html) for an example of one of the HTML files.) Attachments are saved in a separate directory for each conversation.
 
-It will try and match phone numbers and email addresses to real names, using your Mac's Address Book. For best results, open your Contacts app and drag all contacts from the iCloud section to the "On My Mac" section first.
+It will try and match phone numbers and email addresses to real names, using your Mac's Address Book. It should be able to find contacts that are stored either on your Mac or in iCloud, if they've had time to sync to your Mac (typically only a few minutes).
 
 Note that if you are running OSX Mojave or later, you will probably need to [give Terminal full disk access](https://osxdaily.com/2018/10/09/fix-operation-not-permitted-terminal-error-macos/) in order for OSX Messages Exporter to work.
 
