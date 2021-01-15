@@ -64,6 +64,8 @@ $temp_db->exec( "CREATE INDEX IF NOT EXISTS chat_title_index ON messages (chat_t
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
 
+$updated_contacts_memo = array();
+
 if ( ! isset( $options['r'] ) ) {
 	$db = new SQLite3( $_SERVER['HOME'] . "/Library/Messages/chat.db", SQLITE3_OPEN_READONLY );
 	$chats = $db->query( "SELECT * FROM chat" );
@@ -104,10 +106,74 @@ if ( ! isset( $options['r'] ) ) {
 			FROM message LEFT JOIN handle ON message.handle_id=handle.ROWID
 			WHERE message.ROWID IN (SELECT message_id FROM chat_message_join WHERE chat_id=:rowid)" );
 		$statement->bindValue( ':rowid', $row['ROWID'] );
-		
+
 		$messages = $statement->execute();
-	
+
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
+			if ( strpos( $chat_title, ', ' ) === false && ! isset( $updated_contacts_memo[ $message['contact'] ] ) ) {
+				// Get all existing chat names for this contact ID.
+				// If the contact name has changed, update it for old messages and update the folder and filenames.
+				$stored_messages_statement = $temp_db->prepare( "SELECT chat_title FROM messages WHERE contact=:contact GROUP BY chat_title" );
+				$stored_messages_statement->bindValue( ":contact", $message['contact'] );
+				$stored_messages = $stored_messages_statement->execute();
+
+				while ( $stored_message = $stored_messages->fetchArray( SQLITE3_ASSOC ) ) {
+					if ( $stored_message['chat_title'] === $chat_title ) {
+						continue;
+					}
+
+					if ( strpos( $stored_message['chat_title'], ', ' ) !== false ) {
+						// Group chats are tricky. @todo
+						continue;
+					}
+
+					echo "Updating conversation from '" . $stored_message['chat_title'] . "' to '" . $chat_title . "'\n";
+
+					// If the contact name has changed, update it in old stored messages.
+					$update_statement = $temp_db->prepare( "UPDATE messages SET chat_title=:new_chat_title WHERE contact=:contact AND chat_title=:old_chat_title" );
+					$update_statement->bindValue( ":new_chat_title", $chat_title, SQLITE3_TEXT );
+					$update_statement->bindValue( ":contact", $message['contact'] );
+					$update_statement->bindValue( ":old_chat_title", $stored_message['chat_title'], SQLITE3_TEXT );
+					$update_statement->execute();
+
+					// Update the folder and filenames.
+
+					// For the HTML, we can just delete it, since it gets regenerated.
+					$old_html_file = get_html_file( get_chat_title_for_filesystem( $stored_message['chat_title'] ) );
+
+					echo "Old HTML file: " . $old_html_file . "\n";
+
+					if ( file_exists( $old_html_file ) ) {
+						unlink( $old_html_file );
+					}
+
+					// For the attachments directory, we need to create the new one and move everything from the old one.
+					$old_attachments_directory = get_attachments_directory( get_chat_title_for_filesystem( $stored_message['chat_title'] ) );
+
+					echo "Old attachments directory: " . $old_attachments_directory . "\n";
+					if ( file_exists( $old_attachments_directory ) ) {
+						$new_attachments_directory = get_attachments_directory( get_chat_title_for_filesystem( $chat_title ) );
+
+						echo "New attachments directory: " . $new_attachments_directory . "\n";
+
+						if ( ! file_exists( $new_attachments_directory ) ) {
+							mkdir( $new_attachments_directory );
+						}
+
+						shell_exec( "mv -n " . escapeshellarg( $old_attachments_directory ) . "* " . escapeshellarg( $new_attachments_directory ) );
+
+						if ( empty( glob( $old_attachments_directory . "/*" ) ) ) {
+							echo "Deleting " . $old_attachments_directory . "\n";
+
+							// If there were two files with the same filename, keep the one in the old directory.
+							rmdir( $old_attachments_directory );
+						}
+					}
+				}
+
+				$updated_contacts_memo[ $message['contact'] ] = true;
+			}
+
 			// 0xfffc is the Object Replacement Character. Messages uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
 			$message['text'] = trim( str_replace( '￼', '', $message['text'] ) );
 
@@ -223,31 +289,13 @@ $contacts = $temp_db->query( "SELECT chat_title FROM messages GROUP BY chat_titl
 
 while ( $row = $contacts->fetchArray() ) {
 	$chat_title = $row['chat_title'];
-	
-	$chat_title_for_filesystem = $chat_title;
-	
-	// Mac OSX has a 255-char filename limit, so if the number of contacts in a chat
-	// would push the filenames past 255 chars, truncate the filename and add an identifier
-	// to ensure that another chat with the same initial list of contacts doesn't overlap
-	// with it.
-	if ( strlen( $chat_title_for_filesystem . ".html" ) > 255 ) {
-		$unique_chat_hash = "{" . md5( $chat_title ) . "}";
-		
-		// Shorten the filename until there's enough room for the identifying hash and a space.
-		while ( strlen( $chat_title_for_filesystem . ".html" ) > 255 - 1 - strlen( $unique_chat_hash ) ) {
-			$chat_title_for_filesystem = explode( " ", $chat_title_for_filesystem );
-			array_pop( $chat_title_for_filesystem );
-			$chat_title_for_filesystem = join( " ", $chat_title_for_filesystem );
-		}
-		
-		$chat_title_for_filesystem .= " " . $unique_chat_hash;
-	}
-	
-	$html_file = $options['o'] . $chat_title_for_filesystem . '.html';
-	$attachments_directory = $options['o'] . $chat_title_for_filesystem . '/';
-	
+
+	$chat_title_for_filesystem = get_chat_title_for_filesystem( $chat_title );
+	$html_file = get_html_file( $chat_title_for_filesystem );
+	$attachments_directory = get_attachments_directory( $chat_title_for_filesystem );
+
 	$conversation_participant_count = substr_count( $chat_title, "," ) + 2;
-	
+
 	if ( ! file_exists( $html_file ) ) {
 		touch( $html_file );
 	}
@@ -507,6 +555,41 @@ function get_contact_nicename( $contact_notnice_name ) {
 			}
 		}
 	}
-	
+
 	return $contact_nicename_map[ $contact_notnice_name ];
+}
+
+function get_chat_title_for_filesystem( $chat_title ) {
+	$chat_title_for_filesystem = $chat_title;
+
+	// Mac OSX has a 255-char filename limit, so if the number of contacts in a chat
+	// would push the filenames past 255 chars, truncate the filename and add an identifier
+	// to ensure that another chat with the same initial list of contacts doesn't overlap
+	// with it.
+	if ( strlen( $chat_title_for_filesystem . ".html" ) > 255 ) {
+		$unique_chat_hash = "{" . md5( $chat_title ) . "}";
+
+		// Shorten the filename until there's enough room for the identifying hash and a space.
+		while ( strlen( $chat_title_for_filesystem . ".html" ) > 255 - 1 - strlen( $unique_chat_hash ) ) {
+			$chat_title_for_filesystem = explode( " ", $chat_title_for_filesystem );
+			array_pop( $chat_title_for_filesystem );
+			$chat_title_for_filesystem = join( " ", $chat_title_for_filesystem );
+		}
+
+		$chat_title_for_filesystem .= " " . $unique_chat_hash;
+	}
+
+	return $chat_title_for_filesystem;
+}
+
+function get_html_file( $chat_title_for_filesystem ) {
+	global $options;
+
+	return $options['o'] . $chat_title_for_filesystem . '.html';
+}
+
+function get_attachments_directory( $chat_title_for_filesystem ) {
+	global $options;
+
+	return $options['o'] . $chat_title_for_filesystem . '/';
 }
