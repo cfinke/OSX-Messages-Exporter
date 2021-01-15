@@ -593,6 +593,7 @@ function get_chat_title_for_filesystem( $chat_title ) {
 	// to ensure that another chat with the same initial list of contacts doesn't overlap
 	// with it.
 
+	// Colon and slash are prohibited in filenames on Mac.
 	$chat_title_for_filesystem = str_replace( array( ":", "/" ), "-", $chat_title_for_filesystem );
 
 	if ( strlen( $chat_title_for_filesystem . ".html" ) > 255 ) {
