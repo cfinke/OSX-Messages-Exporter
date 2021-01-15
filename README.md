@@ -12,15 +12,25 @@ With the `-f` or `--flush` option, you can force the script to delete the existi
 
 With the `-r` or `--rebuild` option, you can regenerate the HTML files from the backup library.
 
+With the `-d` or `--database` option, you can run the export on a specific Messages database file. By default, the script uses `~/Library/Messages/chat.db`. Note that when using this option, attachments will not be saved, since the assumption is that the paths to the files are from another machine.
+
+With the `--date-start` and `--date-stop` options, you can limit the dates that are added to your backup. Note that this only applies to new messages being exported; it won't remove messages outside of those dates that have already been exported.
+
 Usage
 =====
 ```
 $ messages-exporter.php [-o|--output_directory output_directory]
                         output_directory: a path to the directory where the messages should be saved. Save files in the current directory by default.
                         [-f|--flush]
-                        Flushes the existing backup DB, essentially starting over from scratch.
+                        Optionally, flush the existing backup database, essentially starting over from scratch.
                         [-r|--rebuild]
-                        Rebuild the HTML files from the existing DB.
+                        Optionally, rebuild the HTML files from the existing database.
+                        [-d|--database /path/to/chat/database]
+                        Optionally, specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.
+                        [--date-start YYYY-MM-DD]
+                        Optionally, specify the first date that should be queried from the Messages database.
+                        [--date-stop YYYY-MM-DD]
+                        Optionally, specify the last date that should be queried from the Messages database.
 ```
 
 Caveats
