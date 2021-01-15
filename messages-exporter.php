@@ -13,6 +13,8 @@
 #                         [-r|--rebuild]
 #                         Rebuild the HTML files from the existing DB.
 
+define( 'VERSION', 2 );
+
 $options = getopt( "o:fhrd:", array( "output_directory:", "flush", "help", "rebuild", "database:" ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
@@ -78,6 +80,43 @@ $temp_db->exec( "CREATE TABLE IF NOT EXISTS messages ( message_id INTEGER PRIMAR
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS chat_title_index ON messages (chat_title)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS contact_index ON messages (contact)" );
 $temp_db->exec( "CREATE INDEX IF NOT EXISTS timestamp_index ON messages (timestamp)" );
+
+$temp_db->exec( "CREATE TABLE IF NOT EXISTS meta ( meta_id INTEGER PRIMARY KEY, meta_key TEXT, meta_value TEXT, UNIQUE (meta_key) ON CONFLICT REPLACE )" );
+
+$previous_version = $temp_db->querySingle( "SELECT meta_value FROM meta WHERE meta_key='version'" );
+
+if ( ! $previous_version ) {
+	$previous_version = 1;
+}
+
+if ( $previous_version < 2 ) {
+	// In version 2, we switched to timestamp-based attachment filenames. Update all existing attachments that are referenced in a message.
+	$attachments_statement = $temp_db->prepare( "SELECT * FROM messages WHERE is_attachment=1" );
+	$attachments = $attachments_statement->execute();
+
+	while ( $attachment = $attachments->fetchArray() ) {
+		$chat_title = $attachment['chat_title'];
+
+		$old_attachment_filename = basename( $attachment['content'] );
+
+		if ( ! $old_attachment_filename ) {
+			continue;
+		}
+
+		$new_attachment_filename = date( 'Y-m-d H i s', strtotime( $attachment['timestamp'] ) ) . ' - ' . $old_attachment_filename;
+
+		$chat_title_for_filesystem = get_chat_title_for_filesystem( $chat_title );
+		$attachments_directory = get_attachments_directory( $chat_title_for_filesystem );
+
+		if ( file_exists( $attachments_directory . $old_attachment_filename ) && ! file_exists( $attachments_directory . $new_attachment_filename ) ) {
+			rename( $attachments_directory . $old_attachment_filename, $attachments_directory . $new_attachment_filename );
+		}
+	}
+}
+
+$version_statement = $temp_db->prepare( "INSERT INTO meta (meta_key, meta_value) VALUES ('version', :meta_value)" );
+$version_statement->bindValue( ':meta_value', VERSION, SQLITE3_TEXT );
+$version_statement->execute();
 
 $updated_contacts_memo = array();
 
@@ -152,8 +191,6 @@ if ( ! isset( $options['r'] ) ) {
 						continue;
 					}
 
-					echo "Updating conversation from '" . $stored_message['chat_title'] . "' to '" . $chat_title . "'\n";
-
 					// If the contact name has changed, update it in old stored messages.
 					$update_statement = $temp_db->prepare( "UPDATE messages SET chat_title=:new_chat_title WHERE contact=:contact AND chat_title=:old_chat_title" );
 					$update_statement->bindValue( ":new_chat_title", $chat_title, SQLITE3_TEXT );
@@ -166,8 +203,6 @@ if ( ! isset( $options['r'] ) ) {
 					// For the HTML, we can just delete it, since it gets regenerated.
 					$old_html_file = get_html_file( get_chat_title_for_filesystem( $stored_message['chat_title'] ) );
 
-					echo "Old HTML file: " . $old_html_file . "\n";
-
 					if ( file_exists( $old_html_file ) ) {
 						unlink( $old_html_file );
 					}
@@ -175,11 +210,8 @@ if ( ! isset( $options['r'] ) ) {
 					// For the attachments directory, we need to create the new one and move everything from the old one.
 					$old_attachments_directory = get_attachments_directory( get_chat_title_for_filesystem( $stored_message['chat_title'] ) );
 
-					echo "Old attachments directory: " . $old_attachments_directory . "\n";
 					if ( file_exists( $old_attachments_directory ) ) {
 						$new_attachments_directory = get_attachments_directory( get_chat_title_for_filesystem( $chat_title ) );
-
-						echo "New attachments directory: " . $new_attachments_directory . "\n";
 
 						if ( ! file_exists( $new_attachments_directory ) ) {
 							mkdir( $new_attachments_directory );
@@ -188,8 +220,6 @@ if ( ! isset( $options['r'] ) ) {
 						shell_exec( "mv -n " . escapeshellarg( $old_attachments_directory ) . "* " . escapeshellarg( $new_attachments_directory ) );
 
 						if ( empty( glob( $old_attachments_directory . "/*" ) ) ) {
-							echo "Deleting " . $old_attachments_directory . "\n";
-
 							// If there were two files with the same filename, keep the one in the old directory.
 							rmdir( $old_attachments_directory );
 						}
@@ -269,12 +299,6 @@ if ( ! isset( $options['r'] ) ) {
 				$attachmentResults = $attachmentStatement->execute();
 
 				while ( $attachmentResult = $attachmentResults->fetchArray( SQLITE3_ASSOC ) ) {
-					if ( empty( $attachmentResult['filename'] ) ) {
-						// Could be something like an Apple Pay request.
-						// $attachmentResult['attribution_info'] has a hint: bplist00?TnameYbundle-idiApple?Pay_vcom.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.PassbookUIService.PeerPaymentMessage...
-						// @todo
-					}
-
 					if ( $correct_date != $message['date_from_seconds'] ) {
 						// See the comment above for why we do this DELETE.
 						$delete_old_date_statement = $temp_db->prepare(
@@ -296,14 +320,34 @@ if ( ! isset( $options['r'] ) ) {
 						$delete_old_date_statement->execute();
 					}
 
-					$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
-					$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-					$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
-					$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-					$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
-					$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
-					$insert_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
-					$insert_statement->execute();
+					if ( empty( $attachmentResult['filename'] ) ) {
+						// Could be something like an Apple Pay request.
+						// $attachmentResult['attribution_info'] has a hint: bplist00?TnameYbundle-idiApple?Pay_vcom.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.PassbookUIService.PeerPaymentMessage...
+						// @todo
+					}
+
+					if ( ! empty( $options['d'] ) ) {
+						// If we're running on a database that is not the default system DB, the attachments are likely not available,
+						// and even if there's a filename match, it may not be the correct file.  Simply note that there was an attachment
+						// that is now unavailable.
+						$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
+						$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+						$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+						$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+						$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
+						$insert_statement->bindValue( ':content', '[File unavailable: ' . $attachmentResult['filename'] . ']', SQLITE3_TEXT );
+						$insert_statement->execute();
+					}
+					else {
+						$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
+						$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+						$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+						$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+						$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
+						$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
+						$insert_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
+						$insert_statement->execute();
+					}
 				}
 			}
 		}
@@ -400,8 +444,7 @@ while ( $row = $contacts->fetchArray() ) {
 
 				$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
 
-				// If we previously saved the attachment but it's no longer available, don't show "File Not Found".
-				// @todo It's possible that we've saved a file with the same filename as this one but it's not the same file.
+				// If the file is no longer available and we didn't previously save it, show "File Not Found".
 				if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
 					$html_embed = '[File Not Found: ' . $attachment_filename . ']';
 				}
