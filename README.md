@@ -31,6 +31,8 @@ $ messages-exporter.php [-o|--output_directory output_directory]
                         Optionally, specify the first date that should be queried from the Messages database.
                         [--date-stop YYYY-MM-DD]
                         Optionally, specify the last date that should be queried from the Messages database.
+                        [-t|--timezone "America/Los_Angeles"]
+                        Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php
 ```
 
 Caveats

@@ -15,7 +15,7 @@
 
 define( 'VERSION', 2 );
 
-$options = getopt( "o:fhrd:", array( "output_directory:", "flush", "help", "rebuild", "database:", "date-start:", "date-stop:", ) );
+$options = getopt( "o:fhrd:t:", array( "output_directory:", "flush", "help", "rebuild", "database:", "date-start:", "date-stop:", "timezone:", ) );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/directory] [-f|--flush] [-r|--rebuild] [-d|--database /path/to/chat/database]\n"
@@ -30,6 +30,8 @@ if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 	   . "                             Optionally, specify the first date that should be queried from the Messages database.\n"
 	   . "                             [--date-stop YYYY-MM-DD]\n"
 	   . "                             Optionally, specify the last date that should be queried from the Messages database.\n"
+	   . "                             [-t|--timezone \"America/Los_Angeles\"]\n"
+	   . "                             Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php\n"
 	   . "";
 	echo "\n";
 	die();
@@ -54,6 +56,10 @@ if ( ! isset( $options['r'] ) && isset( $options['rebuild'] ) ) {
 	$options['r'] = true;
 }
 
+if ( isset( $options['timezone'] ) ) {
+	$options['t'] = $options['timezone'];
+}
+
 if ( isset( $options['o'] ) ) {
 	$options['o'] = preg_replace( '/^~/', $_SERVER['HOME'], $options['o'] );
 }
@@ -64,6 +70,22 @@ if ( isset( $options['d'] ) ) {
 
 # Ensure a trailing slash on the output directory.
 $options['o'] = rtrim( $options['o'], '/' ) . '/';
+
+if ( ! empty( $options['t'] ) ) {
+	try {
+		new DateTimeZone( $options['t'] );
+	} catch ( Exception $e ) {
+		file_put_contents('php://stderr', "Invalid timezone identifier: " . $options['t'] . "\n" );
+		die;
+	}
+
+	$timezone = new \DateTimeZone( $options['t'] );
+	$time_right_now = new \DateTime( 'now', $timezone );
+	$timezone_offset = $timezone->getOffset( $time_right_now );
+}
+else {
+	$timezone_offset = 0;
+}
 
 # Create the output directory if it doesn't exist.
 if ( ! file_exists( $options['o'] ) ) {
@@ -432,7 +454,7 @@ while ( $row = $contacts->fetchArray() ) {
 
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time ) . '</p><br />' . "\n",
+				"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n",
 				FILE_APPEND
 			);
 		}
@@ -525,14 +547,14 @@ while ( $row = $contacts->fetchArray() ) {
 
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . $html_embed . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>',
 				FILE_APPEND
 			);
 		}
 		else {
 			file_put_contents(
 				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>',
+				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>',
 				FILE_APPEND
 			);
 		}
