@@ -297,6 +297,13 @@ if ( ! isset( $options['r'] ) ) {
 				$insert_statement->execute();
 			}
 
+			// Handle any attachments.
+
+			if ( isset( $message['balloon_bundle_id'] ) && 'com.apple.messages.URLBalloonProvider' === $message['balloon_bundle_id'] ) {
+				// The attachment would just be a URL preview.
+				continue;
+			}
+
 			if ( $message['cache_has_attachments'] ) {
 				$attachmentStatement = $db->prepare(
 					"SELECT 
