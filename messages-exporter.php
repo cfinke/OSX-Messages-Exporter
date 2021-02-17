@@ -79,6 +79,8 @@ if ( ! empty( $options['t'] ) ) {
 		die;
 	}
 
+	date_default_timezone_set( $options['t'] );
+
 	$timezone = new \DateTimeZone( $options['t'] );
 	$time_right_now = new \DateTime( 'now', $timezone );
 	$timezone_offset = $timezone->getOffset( $time_right_now );
