@@ -50,3 +50,4 @@ Caveats
 Questions?
 ==========
 Email me at cfinke@gmail.com.
+(Enhanced by Garvin Hicking, @supergarv on Twitter)

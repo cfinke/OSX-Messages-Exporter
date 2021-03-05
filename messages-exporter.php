@@ -1,11 +1,11 @@
 #!/usr/bin/env php
 <?php
-
 # Export Messages conversations to HTML files.
+# Enhanced by Garvin Hicking @supergarv https://garv.in
 # Based on https://github.com/PeterKaminski09/baskup, which was
 # based on https://github.com/kyro38/MiscStuff/blob/master/OSXStuff/iMessageBackup.sh
 #
-# Usage:
+# Basic Usage (see -h output for more):
 # $ messages-exporter.php [-o|--output_directory output_directory]
 #                         The path to the directory where the messages should be saved. Save files in the current directory by default.
 #                         [-f|--flush]
@@ -15,24 +15,54 @@
 
 define( 'VERSION', 2 );
 
-$options = getopt( "o:fhrd:t:", array( "output_directory:", "flush", "help", "rebuild", "database:", "date-start:", "date-stop:", "timezone:", ) );
+$options = getopt(
+    "o:fhrd:t:",
+    array(
+        "output_directory:",
+        "flush",
+        "help",
+        "rebuild",
+        "database:",
+        "date-start:",
+        "date-stop:",
+        "timezone:",
+    )
+);
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
-	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/directory] [-f|--flush] [-r|--rebuild] [-d|--database /path/to/chat/database]\n"
-	   . "                             output_directory: a path to the directory where the messages should be saved. Save files in the current directory by default.\n"
-	   . "                             [-f|--flush]\n"
-	   . "                             Flushes the existing backup database, essentially starting over from scratch.\n"
-	   . "                             [-r|--rebuild]\n"
-	   . "                             Rebuild the HTML files from the existing database.\n"
-	   . "                             [-d|--database /path/to/chat/database]\n"
-	   . "                             You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
-	   . "                             [--date-start YYYY-MM-DD]\n"
-	   . "                             Optionally, specify the first date that should be queried from the Messages database.\n"
-	   . "                             [--date-stop YYYY-MM-DD]\n"
-	   . "                             Optionally, specify the last date that should be queried from the Messages database.\n"
-	   . "                             [-t|--timezone \"America/Los_Angeles\"]\n"
-	   . "                             Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php\n"
-	   . "";
+	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/directory] [-f|--flush] [-r|--rebuild] [-d|--database /path/to/chat/database]\n\n"
+        . "    OPTIONS:\n"
+        . "\n"
+
+		. "    [-o|--output_directory]\n"
+        . "      A path to the directory where the messages should be saved. Save files in the current directory by default.\n"
+        . "\n"
+
+		. "    [-f|--flush]\n"
+		. "      Flushes the existing backup database, essentially starting over from scratch.\n"
+		. "\n"
+
+		. "    [-r|--rebuild]\n"
+		. "      Rebuild the HTML files from the existing database.\n"
+		. "\n"
+
+		. "    [-d|--database /path/to/chat/database]\n"
+        . "      You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
+		. "\n"
+
+        . "    [--date-start YYYY-MM-DD]\n"
+        . "      Optionally, specify the first date that should be queried from the Messages database.\n"
+		. "\n"
+
+        . "    [--date-stop YYYY-MM-DD]\n"
+        . "      Optionally, specify the last date that should be queried from the Messages database.\n"
+		. "\n"
+
+        . "    [-t|--timezone \"America/Los_Angeles\"]\n"
+        . "      Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php\n"
+		. "\n"
+
+        . "";
 	echo "\n";
 	die();
 }
