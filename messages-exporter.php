@@ -165,7 +165,8 @@ if ( ! isset( $options['r'] ) ) {
 	while ( $row = $chats->fetchArray( SQLITE3_ASSOC ) ) {
 		$guid = $row['guid'];
 		$chat_id = $row['ROWID'];
-		$contactNumber = array_pop( explode( ';', $guid ) );
+		$contactArray = explode( ';', $guid );
+		$contactNumber = array_pop( $contactArray );
 
 		$participant_identifiers = array();
 		$chat_participants_statement = $db->prepare(
