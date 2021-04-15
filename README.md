@@ -50,3 +50,7 @@ Caveats
 Questions?
 ==========
 Email me at cfinke@gmail.com.
+
+Props
+=====
+Thanks to Garvin Hicking (@supergarv on Twitter) for fixes and improvements.
