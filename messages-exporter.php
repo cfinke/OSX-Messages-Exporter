@@ -1,5 +1,6 @@
 #!/usr/bin/env php
 <?php
+
 # Export Messages conversations to HTML files.
 # Based on https://github.com/PeterKaminski09/baskup, which was
 # based on https://github.com/kyro38/MiscStuff/blob/master/OSXStuff/iMessageBackup.sh
