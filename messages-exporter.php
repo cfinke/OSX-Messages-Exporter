@@ -16,7 +16,7 @@
 define( 'VERSION', 2 );
 
 $options = getopt(
-    "o:fhrd:t:",
+    "o:fhrd:t:p:",
     array(
         "output_directory:",
         "flush",
@@ -26,6 +26,7 @@ $options = getopt(
         "date-start:",
         "date-stop:",
         "timezone:",
+        "path-template:",
     )
 );
 
@@ -62,6 +63,10 @@ if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
         . "      Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php\n"
 		. "\n"
 
+        . "    [-p|--path-template \"%Y-%m-%d - _CHAT_TITLE_\"]\n"
+        . "      Optionally, supply a strftime-style format string to use for the exported chat files. **Use _CHAT_TITLE_ for the name of the chat.** For example, you can separate your chats into yearly files by using `--path-template \"%Y - _CHAT_TITLE_\"` or monthly files by using `--path-template \"%Y-%m - _CHAT_TITLE_\"`. You may also wish to use the date as a suffix so that chats from the same person are all organized together in Finder, in which case you might use `--path-template \"_CHAT_TITLE_ - %Y-%m-%d\"`"
+		. "\n"
+
         . "";
 	echo "\n";
 	die();
@@ -96,6 +101,14 @@ if ( isset( $options['o'] ) ) {
 
 if ( isset( $options['d'] ) ) {
 	$options['d'] = preg_replace( '/^~/', $_SERVER['HOME'], $options['d'] );
+}
+
+if ( isset( $options['path-template'] ) ) {
+	$options['p'] = $options['path-template'];
+}
+
+if ( empty( $options['p'] ) ) {
+	$options['p'] = '_CHAT_TITLE_';
 }
 
 # Ensure a trailing slash on the output directory.
@@ -343,6 +356,16 @@ if ( ! isset( $options['r'] ) ) {
 					$delete_old_date_statement->execute();
 				}
 
+				if ( ! $message['contact'] && $message['is_from_me'] ) {
+					// The ON CONFLICT REPLACE doesn't work in these conditions (at least not for me). Maybe has something to do with the contact column being null...
+					// So let's manually remove any duplicate rows. This will also clean up any duplicates that have stacked up from previous runs of the script.
+					$delete_statement = $temp_db->prepare( "DELETE FROM messages WHERE chat_title=:chat_title AND contact IS NULL AND is_from_me=1 AND timestamp=:timestamp AND content=:content" );
+					$delete_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+					$delete_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
+					$delete_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
+					$delete_statement->execute();
+				}
+
 				$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
 				$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
 				$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
@@ -428,28 +451,30 @@ if ( ! isset( $options['r'] ) ) {
 	}
 }
 
-$contacts = $temp_db->query( "SELECT chat_title FROM messages GROUP BY chat_title ORDER BY chat_title ASC" );
+$messages_statement = $temp_db->prepare( "SELECT * FROM messages ORDER BY timestamp ASC" );
+$messages = $messages_statement->execute();
 
-while ( $row = $contacts->fetchArray() ) {
-	$chat_title = $row['chat_title'];
+$files_started = array();
+
+while ( $message = $messages->fetchArray() ) {
+	$conversation_participant_count = substr_count( $message['chat_title'], "," ) + 2;
+
+	$chat_title = str_replace(
+		'_CHAT_TITLE_',
+		$message['chat_title'],
+		strftime( $options['p'], strtotime( $message['timestamp'] ) )
+	);
 
 	$chat_title_for_filesystem = get_chat_title_for_filesystem( $chat_title );
 	$html_file = get_html_file( $chat_title_for_filesystem );
 	$attachments_directory = get_attachments_directory( $chat_title_for_filesystem );
 
-	$conversation_participant_count = substr_count( $chat_title, "," ) + 2;
-
-	if ( ! file_exists( $html_file ) ) {
+	if ( ! isset( $files_started[ $html_file ] ) ) {
 		touch( $html_file );
-	}
 
-	$messages_statement = $temp_db->prepare( "SELECT * FROM messages WHERE chat_title=:chat_title ORDER BY timestamp ASC" );
-	$messages_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-	$messages = $messages_statement->execute();
-
-	file_put_contents(
-		$html_file,
-		'<!doctype html>
+		file_put_contents(
+			$html_file,
+			'<!doctype html>
 <html>
 	<head>
 		<meta charset="UTF-8">
@@ -467,138 +492,139 @@ while ( $row = $contacts->fetchArray() ) {
 		</style>
 	</head>
 	<body>
-' );
+	' );
 
-	$last_time = 0;
-	$last_participant = null;
+		$files_started[ $html_file ]['last_time'] = 0;
+		$files_started[ $html_file ]['last_participant'] = null;
+	}
 
-	while ( $message = $messages->fetchArray() ) {
-		$this_time = strtotime( $message['timestamp'] );
+	$this_time = strtotime( $message['timestamp'] );
 
-		if ( $this_time < 0 ) {
-			// There was a bug present from when Apple started storing timestamps as nanoseconds instead of seconds, so the stored
-			// timestamps were all from the year -1413. There's no way to fix it without re-importing the messages. Sorry.
-			$this_time = 0;
-			$message['timestamp'] = "Unknown Date";
-		}
+	if ( $this_time < 0 ) {
+		// There was a bug present from when Apple started storing timestamps as nanoseconds instead of seconds, so the stored
+		// timestamps were all from the year -1413. There's no way to fix it without re-importing the messages. Sorry.
+		$this_time = 0;
+		$message['timestamp'] = "Unknown Date";
+	}
 
-		if ( $this_time - $last_time > ( 60 * 60 ) ) {
-			$last_participant = null;
-
-			file_put_contents(
-				$html_file,
-				"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n",
-				FILE_APPEND
-			);
-		}
-
-		$last_time = $this_time;
-
-		if ( $conversation_participant_count > 2 && ! $message['is_from_me'] && $message['contact'] != $last_participant ) {
-			$last_participant = $message['contact'];
-
-			file_put_contents(
-				$html_file,
-				"\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n",
-				FILE_APPEND
-			);
-		}
-
-		if ( $message['is_attachment'] ) {
-			if ( ! file_exists( $attachments_directory ) ) {
-				mkdir( $attachments_directory );
-			}
-
-			if ( empty( $message['content'] ) ) {
-				$html_embed = '[Unknown Message]';
-			}
-			else {
-				// Give the attachment filename a date-based prefix to avoid filename collisions if this backup is ever migrated to another machine.
-				$attachment_filename = date( 'Y-m-d H i s', strtotime( $message['timestamp'] ) ) . ' - ' . basename( $message['content'] );
-
-				$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
-
-				// If the file is no longer available and we didn't previously save it, show "File Not Found".
-				if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
-					$html_embed = '[File Not Found: ' . $attachment_filename . ']';
-				}
-				else {
-					if ( strpos( $message['content'], '.' ) !== false ) {
-						list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
-					}
-					else {
-						$extension = null;
-						$filename_base = basename( $message['content'] );
-					}
-
-					if (
-					       // We previously saved the attachment but it's no longer available.
-					       ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
-					       ||
-					       ( file_exists( $attachments_directory . $attachment_filename )
-					         && sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-					         && filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
-						   )
-						) {
-						// They're the same file. We've probably already run this script on the message that includes this file.
-					}
-					else {
-						$suffix = 1;
-
-						// If a file already exists where we want to save this attachment, add a suffix like -1, -2, -3, etc. until we get a unique filename.
-						// But don't copy the file if the destination file is the same as the one we're copying.
-						while ( file_exists( $attachments_directory . $attachment_filename ) ) {
-							++$suffix;
-
-							$attachment_filename = $filename_base . '-' . $suffix;
-
-							if ( $extension ) {
-								$attachment_filename .= '.' . $extension;
-							}
-						}
-
-						copy( $file_to_copy, $attachments_directory . $attachment_filename );
-					}
-
-					$html_embed = '';
-
-					if ( strpos( $message['attachment_mime_type'], 'image' ) === 0 ) {
-						$html_embed = '<img src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" />';
-					}
-					else {
-						if ( strpos( $message['attachment_mime_type'], 'video' ) === 0 ) {
-							$html_embed = '<video controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
-						}
-						else if ( strpos( $message['attachment_mime_type'], 'audio' ) === 0 ) {
-							$html_embed = '<audio controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
-						}
-
-						$html_embed .= '<a href="' . $chat_title_for_filesystem . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
-					}
-				}
-			}
-
-			file_put_contents(
-				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>',
-				FILE_APPEND
-			);
-		}
-		else {
-			file_put_contents(
-				$html_file,
-				"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>',
-				FILE_APPEND
-			);
-		}
+	if ( $this_time - $files_started[ $html_file ]['last_time'] > ( 60 * 60 ) ) {
+		$files_started[ $html_file ]['last_participant'] = null;
 
 		file_put_contents(
 			$html_file,
-			"<br />\n",
+			"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n",
 			FILE_APPEND
 		);
 	}
 
+	$files_started[ $html_file ]['last_time'] = $this_time;
+
+	if ( $conversation_participant_count > 2 && ! $message['is_from_me'] && $message['contact'] != $files_started[ $html_file ]['last_participant'] ) {
+		$files_started[ $html_file ]['last_participant'] = $message['contact'];
+
+		file_put_contents(
+			$html_file,
+			"\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n",
+			FILE_APPEND
+		);
+	}
+
+	if ( $message['is_attachment'] ) {
+		if ( ! file_exists( $attachments_directory ) ) {
+			mkdir( $attachments_directory );
+		}
+
+		if ( empty( $message['content'] ) ) {
+			$html_embed = '[Unknown Message]';
+		}
+		else {
+			// Give the attachment filename a date-based prefix to avoid filename collisions if this backup is ever migrated to another machine.
+			$attachment_filename = date( 'Y-m-d H i s', strtotime( $message['timestamp'] ) ) . ' - ' . basename( $message['content'] );
+
+			$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
+
+			// If the file is no longer available and we didn't previously save it, show "File Not Found".
+			if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
+				$html_embed = '[File Not Found: ' . $attachment_filename . ']';
+			}
+			else {
+				if ( strpos( $message['content'], '.' ) !== false ) {
+					list( $extension, $filename_base ) = array_map( 'strrev', explode( '.', strrev( basename( $message['content'] ) ), 2 ) );
+				}
+				else {
+					$extension = null;
+					$filename_base = basename( $message['content'] );
+				}
+
+				if (
+				       // We previously saved the attachment but it's no longer available.
+				       ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
+				       ||
+				       ( file_exists( $attachments_directory . $attachment_filename )
+				         && sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+				         && filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+					   )
+					) {
+					// They're the same file. We've probably already run this script on the message that includes this file.
+				}
+				else {
+					$suffix = 1;
+
+					// If a file already exists where we want to save this attachment, add a suffix like -1, -2, -3, etc. until we get a unique filename.
+					// But don't copy the file if the destination file is the same as the one we're copying.
+					while ( file_exists( $attachments_directory . $attachment_filename ) ) {
+						++$suffix;
+
+						$attachment_filename = $filename_base . '-' . $suffix;
+
+						if ( $extension ) {
+							$attachment_filename .= '.' . $extension;
+						}
+					}
+
+					copy( $file_to_copy, $attachments_directory . $attachment_filename );
+				}
+
+				$html_embed = '';
+
+				if ( strpos( $message['attachment_mime_type'], 'image' ) === 0 ) {
+					$html_embed = '<img src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" />';
+				}
+				else {
+					if ( strpos( $message['attachment_mime_type'], 'video' ) === 0 ) {
+						$html_embed = '<video controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></video><br />';
+					}
+					else if ( strpos( $message['attachment_mime_type'], 'audio' ) === 0 ) {
+						$html_embed = '<audio controls><source src="' . $chat_title_for_filesystem . '/' . $attachment_filename . '" type="' . $message['attachment_mime_type'] . '"></audio><br />';
+					}
+
+					$html_embed .= '<a href="' . $chat_title_for_filesystem . '/' . $attachment_filename . '">' . htmlspecialchars( $attachment_filename ) . '</a>';
+				}
+			}
+		}
+
+		file_put_contents(
+			$html_file,
+			"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>',
+			FILE_APPEND
+		);
+	}
+	else {
+		file_put_contents(
+			$html_file,
+			"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>',
+			FILE_APPEND
+		);
+	}
+
+	file_put_contents(
+		$html_file,
+		"<br />\n",
+		FILE_APPEND
+	);
+}
+
+foreach ( $files_started as $html_file => $meta ) {
 	file_put_contents( $html_file, "\t</body>\n</html>", FILE_APPEND );
 }
 
