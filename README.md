@@ -16,6 +16,8 @@ With the `-d` or `--database` option, you can run the export on a specific Messa
 
 With the `--date-start` and `--date-stop` options, you can limit the dates that are added to your backup. Note that this only applies to new messages being exported; it won't remove messages outside of those dates that have already been exported.
 
+With the `--path-template` option, you can define the format of the exported HTML filenames (as well as the date range for each individual file). The string `_CHAT_TITLE_` will be replaced by the chat title (usually just the name of the other participant), and any `strftime`-style placeholders will be replaced by the appropriate values for the chat's time period. For example, if you set `--path-template "%Y-%m-%d - _CHAT_TITLE_"`, then each exported HTML file will contain at most one day of messages, and they would have names like "2021-06-11 - Alex Smith.html".
+
 Usage
 =====
 ```
@@ -33,6 +35,8 @@ $ messages-exporter.php [-o|--output_directory output_directory]
                         Optionally, specify the last date that should be queried from the Messages database.
                         [-t|--timezone "America/Los_Angeles"]
                         Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php
+                        [-p|--path-template "%Y-%m-%d - _CHAT_TITLE_"]
+                        Optionally, supply a strftime-style format string to use for the exported chat files. **Use _CHAT_TITLE_ for the name of the chat.** For example, you can separate your chats into yearly files by using `--path-template "%Y - _CHAT_TITLE_"` or monthly files by using `--path-template "%Y-%m - _CHAT_TITLE_"`. You may also wish to use the date as a suffix so that chats from the same person are all organized together in Finder, in which case you might use `--path-template "_CHAT_TITLE_ - %Y-%m-%d"`
 ```
 
 Caveats
