@@ -246,6 +246,10 @@ if ( ! isset( $options['r'] ) ) {
 		$messages = $statement->execute();
 
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
+			if ( empty( $message['text'] ) ) {
+				$message['text'] = '';
+			}
+
 			if ( strpos( $chat_title, ', ' ) === false && ! isset( $updated_contacts_memo[ $message['contact'] ] ) ) {
 				// Get all existing chat names for this contact ID.
 				// If the contact name has changed, update it for old messages and update the folder and filenames.
