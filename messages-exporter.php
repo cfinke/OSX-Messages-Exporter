@@ -466,7 +466,7 @@ while ( $message = $messages->fetchArray() ) {
 	$chat_title = str_replace(
 		'_CHAT_TITLE_',
 		$message['chat_title'],
-		strftime( $options['p'], strtotime( $message['timestamp'] ) )
+		strftime_manual( $options['p'], strtotime( $message['timestamp'] ) )
 	);
 
 	$chat_title_for_filesystem = get_chat_title_for_filesystem( $chat_title );
@@ -769,4 +769,29 @@ function get_attachments_directory( $chat_title_for_filesystem ) {
 	global $options;
 
 	return $options['o'] . $chat_title_for_filesystem . '/';
+}
+
+/**
+ * PHP made the choice to deprecate the useful strftime function,
+ * so we just have to do it ourselves. The documentation for
+ * IntlDateFormatter is... not illuminating.
+ *
+ * @see https://stackoverflow.com/questions/22665959/using-php-strftime-using-date-format-string
+ */
+function strftime_manual( $format_string, $timestamp ) {
+	// These don't map, so they'll stay as literals.
+	// $unsupported = ['%U', '%V', '%C', '%g', '%G'];
+
+	$strftime_to_date = array(
+		['%a','%A','%d','%e','%u','%w','%W','%b','%h','%B','%m','%y','%Y', '%D',  '%F', '%x', '%n', '%t', '%H', '%k', '%I', '%l', '%M', '%p', '%P', '%r' /* %I:%M:%S %p */, '%R' /* %H:%M */, '%S', '%T' /* %H:%M:%S */, '%X', '%z', '%Z', '%c', '%s', '%%'],
+		['D','l', 'd', 'j', 'N', 'w', 'W', 'M', 'M', 'F', 'm', 'y', 'Y', 'm/d/y', 'Y-m-d', 'm/d/y',"\n","\t", 'H', 'G', 'h', 'g', 'i', 'A', 'a', 'h:i:s A', 'H:i', 's', 'H:i:s', 'H:i:s', 'O', 'T', 'D M j H:i:s Y' /*Tue Feb 5 00:45:10 2009*/, 'U', '%'],
+    );
+
+	$formatted_string = $format_string;
+
+	foreach ( $strftime_to_date[0] as $idx => $strftime_symbol ) {
+		$formatted_string = str_replace( $strftime_symbol, date( $strftime_to_date[1][$idx], $timestamp ), $formatted_string );
+	}
+
+	return $formatted_string;
 }
