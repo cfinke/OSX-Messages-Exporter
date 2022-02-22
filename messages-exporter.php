@@ -463,6 +463,10 @@ $messages = $messages_statement->execute();
 $files_started = array();
 
 while ( $message = $messages->fetchArray() ) {
+	if ( empty( $message['attachment_mime_type'] ) ) {
+		$message['attachment_mime_type'] = '';
+	}
+
 	$conversation_participant_count = substr_count( $message['chat_title'], "," ) + 2;
 
 	$chat_title = str_replace(
