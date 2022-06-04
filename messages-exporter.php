@@ -463,6 +463,8 @@ $messages = $messages_statement->execute();
 $files_started = array();
 
 while ( $message = $messages->fetchArray() ) {
+	$output = '';
+
 	if ( empty( $message['attachment_mime_type'] ) ) {
 		$message['attachment_mime_type'] = '';
 	}
@@ -480,11 +482,7 @@ while ( $message = $messages->fetchArray() ) {
 	$attachments_directory = get_attachments_directory( $chat_title_for_filesystem );
 
 	if ( ! isset( $files_started[ $html_file ] ) ) {
-		touch( $html_file );
-
-		file_put_contents(
-			$html_file,
-			'<!doctype html>
+		$output .= '<!doctype html>
 <html>
 	<head>
 		<meta charset="UTF-8">
@@ -502,7 +500,7 @@ while ( $message = $messages->fetchArray() ) {
 		</style>
 	</head>
 	<body>
-	' );
+	';
 
 		$files_started[ $html_file ]['last_time'] = 0;
 		$files_started[ $html_file ]['last_participant'] = null;
@@ -520,11 +518,7 @@ while ( $message = $messages->fetchArray() ) {
 	if ( $this_time - $files_started[ $html_file ]['last_time'] > ( 60 * 60 ) ) {
 		$files_started[ $html_file ]['last_participant'] = null;
 
-		file_put_contents(
-			$html_file,
-			"\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n",
-			FILE_APPEND
-		);
+		$output .= "\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n";
 	}
 
 	$files_started[ $html_file ]['last_time'] = $this_time;
@@ -532,11 +526,7 @@ while ( $message = $messages->fetchArray() ) {
 	if ( $conversation_participant_count > 2 && ! $message['is_from_me'] && $message['contact'] != $files_started[ $html_file ]['last_participant'] ) {
 		$files_started[ $html_file ]['last_participant'] = $message['contact'];
 
-		file_put_contents(
-			$html_file,
-			"\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n",
-			FILE_APPEND
-		);
+		$output .= "\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n";
 	}
 
 	if ( $message['is_attachment'] ) {
@@ -613,23 +603,17 @@ while ( $message = $messages->fetchArray() ) {
 			}
 		}
 
-		file_put_contents(
-			$html_file,
-			"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>',
-			FILE_APPEND
-		);
+		$output .= "\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>';
 	}
 	else {
-		file_put_contents(
-			$html_file,
-			"\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>',
-			FILE_APPEND
-		);
+		$output .= "\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>';
 	}
+
+	$output .= "<br />\n";
 
 	file_put_contents(
 		$html_file,
-		"<br />\n",
+		$output,
 		FILE_APPEND
 	);
 }
