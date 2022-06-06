@@ -481,7 +481,11 @@ while ( $message = $messages->fetchArray() ) {
 	$html_file = get_html_file( $chat_title_for_filesystem );
 	$attachments_directory = get_attachments_directory( $chat_title_for_filesystem );
 
+	$write_mode = FILE_APPEND;
+
 	if ( ! isset( $files_started[ $html_file ] ) ) {
+		$write_mode = 0;
+
 		$output .= '<!doctype html>
 <html>
 	<head>
@@ -614,7 +618,7 @@ while ( $message = $messages->fetchArray() ) {
 	file_put_contents(
 		$html_file,
 		$output,
-		FILE_APPEND
+		$write_mode
 	);
 }
 
