@@ -495,11 +495,11 @@ while ( $message = $messages->fetchArray() ) {
 
 		body { font-family: "Helvetica Neue", sans-serif; font-size: 10pt; }
 		p { margin: 0; clear: both; }
-		.timestamp { text-align: center; color: #8e8e93; font-variant: small-caps; font-weight: bold; font-size: 9pt; }
-		.byline { text-align: left; color: #8e8e93; font-size: 9pt; padding-left: 1ex; padding-top: 1ex; margin-bottom: 2px; }
+		.t /* timestamp */ { text-align: center; color: #8e8e93; font-variant: small-caps; font-weight: bold; font-size: 9pt; }
+		.b /* byline */ { text-align: left; color: #8e8e93; font-size: 9pt; padding-left: 1ex; padding-top: 1ex; margin-bottom: 2px; }
 		img { max-width: 100%; }
-		.message { text-align: left; color: black; border-radius: 8px; background-color: #e1e1e1; padding: 6px; display: inline-block; max-width: 75%; margin-bottom: 5px; float: left; }
-		.message[data-from="self"] { text-align: right; background-color: #007aff; color: white; float: right;}
+		.m /* message */ { text-align: left; color: black; border-radius: 8px; background-color: #e1e1e1; padding: 6px; display: inline-block; max-width: 75%; margin-bottom: 5px; float: left; }
+		.m.s /* self */ { text-align: right; background-color: #007aff; color: white; float: right;}
 
 		</style>
 	</head>
@@ -522,7 +522,7 @@ while ( $message = $messages->fetchArray() ) {
 	if ( $this_time - $files_started[ $html_file ]['last_time'] > ( 60 * 60 ) ) {
 		$files_started[ $html_file ]['last_participant'] = null;
 
-		$output .= "\t\t\t" . '<p class="timestamp" data-timestamp="' . $message['timestamp'] . '">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n";
+		$output .= "\t\t\t" . '<p class="t">' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '</p><br />' . "\n";
 	}
 
 	$files_started[ $html_file ]['last_time'] = $this_time;
@@ -530,7 +530,7 @@ while ( $message = $messages->fetchArray() ) {
 	if ( $conversation_participant_count > 2 && ! $message['is_from_me'] && $message['contact'] != $files_started[ $html_file ]['last_participant'] ) {
 		$files_started[ $html_file ]['last_participant'] = $message['contact'];
 
-		$output .= "\t\t\t" . '<p class="byline">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n";
+		$output .= "\t\t\t" . '<p class="b">' . htmlspecialchars( get_contact_nicename( $message['contact'] ) ) .'</p>' . "\n";
 	}
 
 	if ( $message['is_attachment'] ) {
@@ -607,10 +607,10 @@ while ( $message = $messages->fetchArray() ) {
 			}
 		}
 
-		$output .= "\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>';
+		$output .= "\t\t\t" . '<p class="m' . ( $message['is_from_me'] ? ' s' : '' ) . '"  title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . $html_embed . '</p>';
 	}
 	else {
-		$output .= "\t\t\t" . '<p class="message" data-from="' . ( $message['is_from_me'] ? 'self' : $message['contact'] ) . '" data-timestamp="' . $message['timestamp'] . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>';
+		$output .= "\t\t\t" . '<p class="m' . ( $message['is_from_me'] ? ' s' : '' ) . '" title="' . date( "n/j/Y, g:i A", $this_time + $timezone_offset ) . '">' . nl2br( htmlspecialchars( trim( $message['content'] ) ) ) . '</p>';
 	}
 
 	$output .= "<br />\n";
