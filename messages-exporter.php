@@ -345,7 +345,7 @@ if ( ! isset( $options['r'] ) ) {
 				if ( $correct_date != $message['date_from_seconds'] ) {
 					$delete_old_date_statement = $temp_db->prepare(
 						"DELETE FROM messages
-						WHERE 
+						WHERE
 							chat_title=:chat_title AND "
 							. ( $message['is_from_me'] ? " is_from_me=1 AND " : " contact=:contact AND is_from_me=0 AND " )
 							. "timestamp=:timestamp AND
@@ -382,7 +382,7 @@ if ( ! isset( $options['r'] ) ) {
 
 			if ( $message['cache_has_attachments'] ) {
 				$attachmentStatement = $db->prepare(
-					"SELECT 
+					"SELECT
 						attachment.filename,
 						attachment.mime_type,
 						*
@@ -398,7 +398,7 @@ if ( ! isset( $options['r'] ) ) {
 						// See the comment above for why we do this DELETE.
 						$delete_old_date_statement = $temp_db->prepare(
 							"DELETE FROM messages
-							WHERE 
+							WHERE
 								chat_title=:chat_title AND "
 								. ( $message['is_from_me'] ? " is_from_me=1 AND " : " contact=:contact AND is_from_me=0 AND " )
 								. "timestamp=:timestamp AND
