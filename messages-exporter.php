@@ -362,23 +362,15 @@ if ( ! isset( $options['r'] ) ) {
 					$delete_old_date_statement->execute();
 				}
 
-				if ( ! $message['contact'] && $message['is_from_me'] ) {
-					// The ON CONFLICT REPLACE doesn't work in these conditions (at least not for me). Maybe has something to do with the contact column being null...
-					// So let's manually remove any duplicate rows. This will also clean up any duplicates that have stacked up from previous runs of the script.
-					$delete_statement = $temp_db->prepare( "DELETE FROM messages WHERE chat_title=:chat_title AND contact IS NULL AND is_from_me=1 AND timestamp=:timestamp AND content=:content" );
-					$delete_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-					$delete_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
-					$delete_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
-					$delete_statement->execute();
+				if ( ensure_unique_row( $temp_db, $chat_title, $message['contact'], $correct_date, $message['text'], $message['is_from_me'] ) ) {
+					$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
+					$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+					$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+					$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+					$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
+					$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
+					$insert_statement->execute();
 				}
-
-				$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
-				$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-				$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
-				$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-				$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
-				$insert_statement->bindValue( ':content', $message['text'], SQLITE3_TEXT );
-				$insert_statement->execute();
 			}
 
 			// Handle any attachments.
@@ -433,23 +425,30 @@ if ( ! isset( $options['r'] ) ) {
 						// If we're running on a database that is not the default system DB, the attachments are likely not available,
 						// and even if there's a filename match, it may not be the correct file.  Simply note that there was an attachment
 						// that is now unavailable.
-						$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
-						$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-						$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
-						$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-						$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
-						$insert_statement->bindValue( ':content', '[File unavailable: ' . $attachmentResult['filename'] . ']', SQLITE3_TEXT );
-						$insert_statement->execute();
+						if (
+							ensure_unique_row( $temp_db, $chat_title, $message['contact'], $correct_date, '[File unavailable: ' . $attachmentResult['filename'] . ']', $message['is_from_me'] )
+							&& ensure_unique_row( $temp_db, $chat_title, $message['contact'], $correct_date, $attachmentResult['filename'], $message['is_from_me'] ) /* The file was maybe available at the time. */
+							) {
+							$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content) VALUES (:chat_title, :contact, :is_from_me, :timestamp, :content)" );
+							$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+							$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+							$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+							$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
+							$insert_statement->bindValue( ':content', '[File unavailable: ' . $attachmentResult['filename'] . ']', SQLITE3_TEXT );
+							$insert_statement->execute();
+						}
 					}
 					else {
-						$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
-						$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
-						$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
-						$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
-						$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
-						$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
-						$insert_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
-						$insert_statement->execute();
+						if ( ensure_unique_row( $temp_db, $chat_title, $message['contact'], $correct_date, $attachmentResult['filename'], $message['is_from_me'] ) ) {
+							$insert_statement = $temp_db->prepare( "INSERT INTO messages (chat_title, contact, is_attachment, is_from_me, timestamp, content, attachment_mime_type) VALUES (:chat_title, :contact, 1, :is_from_me, :timestamp, :content, :attachment_mime_type)" );
+							$insert_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+							$insert_statement->bindValue( ':contact', $message['contact'], SQLITE3_TEXT );
+							$insert_statement->bindValue( ':is_from_me', $message['is_from_me'] );
+							$insert_statement->bindValue( ':timestamp', $correct_date, SQLITE3_TEXT );
+							$insert_statement->bindValue( ':attachment_mime_type', $attachmentResult['mime_type'], SQLITE3_TEXT );
+							$insert_statement->bindValue( ':content', $attachmentResult['filename'], SQLITE3_TEXT );
+							$insert_statement->execute();
+						}
 					}
 				}
 			}
@@ -457,7 +456,23 @@ if ( ! isset( $options['r'] ) ) {
 	}
 }
 
-$messages_statement = $temp_db->prepare( "SELECT * FROM messages ORDER BY timestamp ASC" );
+do {
+	// SQLite doesn't enforce multi-column uniqueness if one of the values is null, which unfortunately breaks how we try and enforce our unique message index. So I guess we'll just go and delete any duplicates each time this runs.
+	$found_duplicates = false;
+
+	$duplicate_messages_statement = $temp_db->prepare( "SELECT *, COUNT(*) c FROM messages GROUP BY chat_title, contact, timestamp, content, is_from_me HAVING c > 1 ORDER BY message_id DESC" );
+	$duplicate_messages = $duplicate_messages_statement->execute();
+
+	while ( $duplicate_message = $duplicate_messages->fetchArray() ) {
+		$found_duplicates = true;
+
+		$delete_statement = $temp_db->prepare( "DELETE FROM messages WHERE message_id=:message_id" );
+		$delete_statement->bindValue( ':message_id', $duplicate_message['message_id'] );
+		$delete_statement->execute();
+	}
+} while ( $found_duplicates );
+
+$messages_statement = $temp_db->prepare( "SELECT * FROM messages GROUP BY chat_title, is_from_me, timestamp, content ORDER BY timestamp ASC" );
 $messages = $messages_statement->execute();
 
 $files_started = array();
@@ -788,4 +803,45 @@ function strftime_manual( $format_string, $timestamp ) {
 	}
 
 	return $formatted_string;
+}
+
+/**
+ * SQLite doesn't enforce multi-column uniqueness if one of the values is null,
+ * which unfortunately breaks how we try and enforce our unique message index.
+ * So we'll do the check manually here.
+ */
+function ensure_unique_row( $temp_db, $chat_title, $contact, $timestamp, $content, $is_from_me ) {
+	$query = "SELECT message_id FROM messages WHERE chat_title=:chat_title";
+
+	if ( ! is_null( $contact ) ) {
+		$query .= " AND contact=:contact ";
+	} else {
+		$query .= " AND contact IS NULL ";
+	}
+
+	$query .= " AND timestamp=:timestamp ";
+
+	if ( ! is_null( $content ) ) {
+		$query .= " AND content=:content ";
+	} else {
+		$query .= " AND content IS NULL ";
+	}
+
+	$query .= " AND is_from_me=:is_from_me LIMIT 1";
+
+	$check_statement = $temp_db->prepare( $query );
+
+	$check_statement->bindValue( ':chat_title', $chat_title, SQLITE3_TEXT );
+	$check_statement->bindValue( ':contact', $contact, SQLITE3_TEXT );
+	$check_statement->bindValue( ':timestamp', $timestamp, SQLITE3_TEXT );
+	$check_statement->bindValue( ':content', $content, SQLITE3_TEXT );
+	$check_statement->bindValue( ':is_from_me', $is_from_me );
+
+	$existing_rows = $check_statement->execute();
+
+	while ( $existing_row = $existing_rows->fetchArray() ) {
+		return false;
+	}
+
+	return true;
 }
