@@ -603,13 +603,13 @@ while ( $message = $messages->fetchArray() ) {
 				}
 
 				if (
-					   // We previously saved the attachment but it's no longer available.
-					   ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
-					   ||
-					   ( file_exists( $attachments_directory . $attachment_filename )
-					     && sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-					     && filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
-					   )
+						// We previously saved the attachment but it's no longer available.
+						( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
+						||
+						( file_exists( $attachments_directory . $attachment_filename )
+							&& sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+							&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+						)
 					) {
 					// They're the same file. We've probably already run this script on the message that includes this file.
 				}
