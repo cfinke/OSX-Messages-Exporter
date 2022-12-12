@@ -36,12 +36,12 @@ $options = getopt(
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 	echo "Usage: messages-exporter.php [-o|--output_directory /path/to/output/directory] [-f|--flush] [-r|--rebuild] [-d|--database /path/to/chat/database]\n\n"
-        . "    OPTIONS:\n"
-        . "\n"
+		. "    OPTIONS:\n"
+		. "\n"
 
 		. "    [-o|--output_directory]\n"
-        . "      A path to the directory where the messages should be saved. Save files in the current directory by default.\n"
-        . "\n"
+		. "      A path to the directory where the messages should be saved. Save files in the current directory by default.\n"
+		. "\n"
 
 		. "    [-f|--flush]\n"
 		. "      Flushes the existing backup database, essentially starting over from scratch.\n"
@@ -52,34 +52,34 @@ if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 		. "\n"
 
 		. "    [-d|--database /path/to/chat/database]\n"
-        . "      You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
+		. "      You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
 		. "\n"
 
-        . "    [--date-start YYYY-MM-DD]\n"
-        . "      Optionally, specify the first date that should be queried from the Messages database.\n"
+		. "    [--date-start YYYY-MM-DD]\n"
+		. "      Optionally, specify the first date that should be queried from the Messages database.\n"
 		. "\n"
 
-        . "    [--date-stop YYYY-MM-DD]\n"
-        . "      Optionally, specify the last date that should be queried from the Messages database.\n"
+		. "    [--date-stop YYYY-MM-DD]\n"
+		. "      Optionally, specify the last date that should be queried from the Messages database.\n"
 		. "\n"
 
-        . "    [-t|--timezone \"America/Los_Angeles\"]\n"
-        . "      Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php\n"
+		. "    [-t|--timezone \"America/Los_Angeles\"]\n"
+		. "      Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php\n"
 		. "\n"
 
-        . "    [-p|--path-template \"%Y-%m-%d - _CHAT_TITLE_\"]\n"
-        . "      Optionally, supply a strftime-style format string to use for the exported chat files. **Use _CHAT_TITLE_ for the name of the chat.** For example, you can separate your chats into yearly files by using `--path-template \"%Y - _CHAT_TITLE_\"` or monthly files by using `--path-template \"%Y-%m - _CHAT_TITLE_\"`. You may also wish to use the date as a suffix so that chats from the same person are all organized together in Finder, in which case you might use `--path-template \"_CHAT_TITLE_ - %Y-%m-%d\"`"
-		. "\n"
-			
-        . "    [--match \"Conversation Title\"]\n"
-        . "      Limit the output to conversations that include this argument somewhere in their title. For example, to only back up chats with your friend Alex Smith, you'd specify `--match \"Alex Smith\"`."
+		. "    [-p|--path-template \"%Y-%m-%d - _CHAT_TITLE_\"]\n"
+		. "      Optionally, supply a strftime-style format string to use for the exported chat files. **Use _CHAT_TITLE_ for the name of the chat.** For example, you can separate your chats into yearly files by using `--path-template \"%Y - _CHAT_TITLE_\"` or monthly files by using `--path-template \"%Y-%m - _CHAT_TITLE_\"`. You may also wish to use the date as a suffix so that chats from the same person are all organized together in Finder, in which case you might use `--path-template \"_CHAT_TITLE_ - %Y-%m-%d\"`"
 		. "\n"
 
-        . "    [--match_regex \"/^Conversation Title$/\"]\n"
-        . "      Limit the output to conversations whose titles match this regular expression. For example, to only back up one-on-one chats with your friend Alex Smith, you'd specify `--match \"/^Alex Smith$/\"`."
+		. "    [--match \"Conversation Title\"]\n"
+		. "      Limit the output to conversations that include this argument somewhere in their title. For example, to only back up chats with your friend Alex Smith, you'd specify `--match \"Alex Smith\"`."
 		. "\n"
 
-        . "";
+		. "    [--match_regex \"/^Conversation Title$/\"]\n"
+		. "      Limit the output to conversations whose titles match this regular expression. For example, to only back up one-on-one chats with your friend Alex Smith, you'd specify `--match \"/^Alex Smith$/\"`."
+		. "\n"
+
+		. "";
 	echo "\n";
 	die();
 }
@@ -250,13 +250,13 @@ if ( ! isset( $options['r'] ) ) {
 				continue;
 			}
 		}
-		
+
 		if ( isset( $options['match_regex'] ) ) {
 			if ( ! preg_match( $options['match_regex'], $chat_title ) ) {
 				continue;
 			}
 		}
-		
+
 
 		$statement = $db->prepare(
 			"SELECT
@@ -603,12 +603,12 @@ while ( $message = $messages->fetchArray() ) {
 				}
 
 				if (
-				       // We previously saved the attachment but it's no longer available.
-				       ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
-				       ||
-				       ( file_exists( $attachments_directory . $attachment_filename )
-				         && sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-				         && filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+					   // We previously saved the attachment but it's no longer available.
+					   ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
+					   ||
+					   ( file_exists( $attachments_directory . $attachment_filename )
+					     && sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+					     && filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
 					   )
 					) {
 					// They're the same file. We've probably already run this script on the message that includes this file.
@@ -821,7 +821,7 @@ function strftime_manual( $format_string, $timestamp ) {
 	$strftime_to_date = array(
 		['%a','%A','%d','%e','%u','%w','%W','%b','%h','%B','%m','%y','%Y', '%D',  '%F', '%x', '%n', '%t', '%H', '%k', '%I', '%l', '%M', '%p', '%P', '%r' /* %I:%M:%S %p */, '%R' /* %H:%M */, '%S', '%T' /* %H:%M:%S */, '%X', '%z', '%Z', '%c', '%s', '%%'],
 		['D','l', 'd', 'j', 'N', 'w', 'W', 'M', 'M', 'F', 'm', 'y', 'Y', 'm/d/y', 'Y-m-d', 'm/d/y',"\n","\t", 'H', 'G', 'h', 'g', 'i', 'A', 'a', 'h:i:s A', 'H:i', 's', 'H:i:s', 'H:i:s', 'O', 'T', 'D M j H:i:s Y' /*Tue Feb 5 00:45:10 2009*/, 'U', '%'],
-    );
+	);
 
 	$formatted_string = $format_string;
 
