@@ -43,6 +43,10 @@ $ messages-exporter.php [-o|--output_directory output_directory]
                         Optionally, supply a timezone to use for any dates and times that are displayed. If none is supplied, times will be in UTC. For a list of valid timezones, see https://www.php.net/manual/en/timezones.php
                         [-p|--path-template "%Y-%m-%d - _CHAT_TITLE_"]
                         Optionally, supply a strftime-style format string to use for the exported chat files. **Use _CHAT_TITLE_ for the name of the chat.** For example, you can separate your chats into yearly files by using `--path-template "%Y - _CHAT_TITLE_"` or monthly files by using `--path-template "%Y-%m - _CHAT_TITLE_"`. You may also wish to use the date as a suffix so that chats from the same person are all organized together in Finder, in which case you might use `--path-template "_CHAT_TITLE_ - %Y-%m-%d"`
+                        [--match "Conversation Title"]
+                        Limit the output to conversations that include this argument somewhere in their title.
+                        [--match_regex "/^Conversation Title$/"]
+                        Limit the output to conversations whose titles match this regular expression.
 ```
 
 Caveats

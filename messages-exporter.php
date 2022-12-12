@@ -18,18 +18,20 @@ error_reporting( E_ALL );
 define( 'VERSION', 2 );
 
 $options = getopt(
-    "o:fhrd:t:p:",
-    array(
-        "output_directory:",
-        "flush",
-        "help",
-        "rebuild",
-        "database:",
-        "date-start:",
-        "date-stop:",
-        "timezone:",
-        "path-template:",
-    )
+	"o:fhrd:t:p:",
+	array(
+		"output_directory:",
+		"flush",
+		"help",
+		"rebuild",
+		"database:",
+		"date-start:",
+		"date-stop:",
+		"timezone:",
+		"path-template:",
+		"match:",
+		"match_regex:",
+	)
 );
 
 if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
@@ -67,6 +69,14 @@ if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 
         . "    [-p|--path-template \"%Y-%m-%d - _CHAT_TITLE_\"]\n"
         . "      Optionally, supply a strftime-style format string to use for the exported chat files. **Use _CHAT_TITLE_ for the name of the chat.** For example, you can separate your chats into yearly files by using `--path-template \"%Y - _CHAT_TITLE_\"` or monthly files by using `--path-template \"%Y-%m - _CHAT_TITLE_\"`. You may also wish to use the date as a suffix so that chats from the same person are all organized together in Finder, in which case you might use `--path-template \"_CHAT_TITLE_ - %Y-%m-%d\"`"
+		. "\n"
+			
+        . "    [--match \"Conversation Title\"]\n"
+        . "      Limit the output to conversations that include this argument somewhere in their title. For example, to only back up chats with your friend Alex Smith, you'd specify `--match \"Alex Smith\"`."
+		. "\n"
+
+        . "    [--match_regex \"/^Conversation Title$/\"]\n"
+        . "      Limit the output to conversations whose titles match this regular expression. For example, to only back up one-on-one chats with your friend Alex Smith, you'd specify `--match \"/^Alex Smith$/\"`."
 		. "\n"
 
         . "";
@@ -111,6 +121,10 @@ if ( isset( $options['path-template'] ) ) {
 
 if ( empty( $options['p'] ) ) {
 	$options['p'] = '_CHAT_TITLE_';
+}
+
+if ( isset( $options['m'] ) ) {
+	$options['match'] = $options['m'];
 }
 
 # Ensure a trailing slash on the output directory.
@@ -230,6 +244,19 @@ if ( ! isset( $options['r'] ) ) {
 		if ( empty( $chat_title ) ) {
 			$chat_title = $contactNumber;
 		}
+
+		if ( isset( $options['match'] ) ) {
+			if ( stripos( $chat_title, $options['match'] ) === false ) {
+				continue;
+			}
+		}
+		
+		if ( isset( $options['match_regex'] ) ) {
+			if ( ! preg_match( $options['match_regex'], $chat_title ) ) {
+				continue;
+			}
+		}
+		
 
 		$statement = $db->prepare(
 			"SELECT
