@@ -264,6 +264,7 @@ if ( ! isset( $options['r'] ) ) {
 				message.ROWID,
 				message.is_from_me,
 				message.text,
+				message.attributedBody,
 				handle.id as contact,
 				message.cache_has_attachments,
 				datetime(message.date/1000000000 + strftime('%s', '2001-01-01 00:00:00'), 'unixepoch', 'localtime') AS date_from_nanoseconds,
@@ -277,6 +278,64 @@ if ( ! isset( $options['r'] ) ) {
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
 			if ( empty( $message['text'] ) ) {
 				$message['text'] = '';
+			}
+
+			if ( '' === $message['text'] && $message['attributedBody'] ) {
+				if ( ! $message['text'] ) {
+					// Look for NSStrings.
+					$parts = explode( 'NSString', $message['attributedBody'] );
+
+					array_shift( $parts );
+
+					foreach ( $parts as $part ) {
+						// This is probably a bad method but it works for now.
+						// Ideally I could read the object stored in attributedBody with PHP and just access the data I want.
+
+						// Find the byte 2b.
+						//
+						// There is either the byte 81 followed by 2 bytes and the message, or there is a single non-81 byte, then the start of the message.
+
+						$two_b = strpos( $part, '+' );
+
+						if ( $two_b ) {
+							if ( substr( $part, $two_b + 1 , 1 ) == hex2bin( '81' ) ) {
+								$message_text_and_more = substr( $part, $two_b + 4 );
+							}
+							else {
+								$message_text_and_more = substr( $part, $two_b + 2 );
+							}
+
+							// Messages seem to be ended by the bytes 86 84
+							$end_index = strpos( $message_text_and_more, hex2bin( '8684' ) );
+
+							if ( ! $end_index ) {
+							}
+							else {
+								$message_text = substr( $message_text_and_more, 0, $end_index );
+								$message['text'] = $message_text;
+								break;
+							}
+
+						}
+					}
+				}
+
+				if ( ! $message['text'] ) {
+					// echo "Didn't find the message in an NSString.\n";
+					// var_dump( $message['attributedBody'] );
+					// Look for the longest ASCII text string.
+					preg_match_all( '/([ -~]+)/', $message['attributedBody'], $ascii_strings );
+
+					$longest_string = '';
+
+					foreach ( $ascii_strings[0] as $ascii_string ) {
+						if ( strlen( $ascii_string ) > strlen( $longest_string ) ) {
+							$longest_string = $ascii_string;
+						}
+					}
+
+					$message['text'] = '[OSX Messages Exporter encountered an error, but this is probably the message] ' . $longest_string;
+				}
 			}
 
 			if ( strpos( $chat_title, ', ' ) === false && ! isset( $updated_contacts_memo[ $message['contact'] ] ) ) {
