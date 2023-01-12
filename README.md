@@ -1,6 +1,10 @@
 OSX Messages Exporter
 =====================
-Exports Messages' conversations to HTML files. This includes iMessages, SMSs, and group conversations.
+Exports Messages' conversations to HTML files. This includes iMessages, SMSs, and group conversations. The simplest way to run it is this:
+
+`php messages-exporter.php -o ~/Desktop/Messages/`
+
+After it finishes, you'll have an HTML backup of the messages on your computer in a folder called "Messages" on your Desktop.
 
 This script processes all of the existing conversations in the Messages app, logs them to a separate backup database in your specified output directory, and then generates HTML files for each conversation, mimicking the look and feel of Messages conversations:
 
