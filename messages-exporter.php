@@ -25,6 +25,7 @@ $options = getopt(
 		"help",
 		"rebuild",
 		"database:",
+		"force-attachments",
 		"date-start:",
 		"date-stop:",
 		"timezone:",
@@ -52,7 +53,11 @@ if ( isset( $options['h'] ) || isset( $options['help'] ) ) {
 		. "\n"
 
 		. "    [-d|--database /path/to/chat/database]\n"
-		. "      You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine.\n"
+		. "      You can specify an alternate database file if, for example, you're running this script on a backup of chat.db from another machine. Note that if you use this argument, attachments will not be saved because it is presumed that they are not available on the current machine.\n"
+		. "\n"
+
+		. "    [--force-attachments]\n"
+		. "      If you specify -d|--database, you can use this parameter to force the script to try and find attachments anyway.\n"
 		. "\n"
 
 		. "    [--date-start YYYY-MM-DD]\n"
@@ -507,7 +512,7 @@ if ( ! isset( $options['r'] ) ) {
 						// @todo
 					}
 
-					if ( ! empty( $options['d'] ) ) {
+					if ( ! empty( $options['d'] ) && ! isset( $options['force-attachments'] ) ) {
 						// If we're running on a database that is not the default system DB, the attachments are likely not available,
 						// and even if there's a filename match, it may not be the correct file.  Simply note that there was an attachment
 						// that is now unavailable.
