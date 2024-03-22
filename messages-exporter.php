@@ -694,7 +694,8 @@ while ( $message = $messages->fetchArray() ) {
 					}
 
 					if ( is_dir( $file_to_copy ) ) {
-						die( $file_to_copy . " is a directory, not a file. Found in message body " . $message['content'] . "\n" );
+						echo( $file_to_copy . " is a directory, not a file. Found in message body " . $message['content'] . "\n" );
+						continue;
 					}
 
 					copy( $file_to_copy, $attachments_directory . $attachment_filename );
