@@ -654,6 +654,10 @@ while ( $message = $messages->fetchArray() ) {
 
 			$file_to_copy = preg_replace( '/^~/', $_SERVER['HOME'], $message['content'] );
 
+			if ( is_dir( $file_to_copy ) ) {
+				$attachment_filename .= ".zip";
+			}
+
 			// If the file is no longer available and we didn't previously save it, show "File Not Found".
 			if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
 				$html_embed = '[File Not Found: ' . $attachment_filename . ']';
@@ -672,8 +676,14 @@ while ( $message = $messages->fetchArray() ) {
 						( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
 						||
 						( file_exists( $attachments_directory . $attachment_filename )
-							&& sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-							&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+							&& (
+								is_dir( $file_to_copy ) // We'll just assume it's the same.
+								||
+								(
+									sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+									&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+								)
+							)
 						)
 					) {
 					// They're the same file. We've probably already run this script on the message that includes this file.
@@ -694,11 +704,27 @@ while ( $message = $messages->fetchArray() ) {
 					}
 
 					if ( is_dir( $file_to_copy ) ) {
-						echo( $file_to_copy . " is a directory, not a file. Found in message body " . $message['content'] . "\n" );
-						continue;
-					}
+						// Zip the directory and copy it.
 
-					copy( $file_to_copy, $attachments_directory . $attachment_filename );
+						// echo( $file_to_copy . " is a directory, not a file. Found in message body " . $message['content'] . "\n" );
+
+						// Change to the directory above the directory we want to zip so that the full path isn't stored in the zip.
+						$cwd = getcwd();
+						chdir( $file_to_copy );
+						chdir( ".." );
+
+						$folder_name = basename( $file_to_copy );
+						$tmp_zip_path = rtrim( sys_get_temp_dir(), DIRECTORY_SEPARATOR ) . DIRECTORY_SEPARATOR . uniqid( "messages-exporter-" ) . ".zip";
+						shell_exec( "zip -r " . escapeshellarg( $tmp_zip_path ) . " " . $folder_name );
+
+						chdir( $cwd );
+
+						copy( $tmp_zip_path, $attachments_directory . $attachment_filename );
+
+						unlink( $tmp_zip_path );
+					} else {
+						copy( $file_to_copy, $attachments_directory . $attachment_filename );
+					}
 				}
 
 				$html_embed = '';
