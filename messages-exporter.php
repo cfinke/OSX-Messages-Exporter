@@ -568,6 +568,8 @@ $messages = $messages_statement->execute();
 
 $files_started = array();
 
+$leftover_files_to_delete = array();
+
 while ( $message = $messages->fetchArray() ) {
 	$output = '';
 
@@ -671,29 +673,58 @@ while ( $message = $messages->fetchArray() ) {
 					$filename_base = basename( $message['content'] );
 				}
 
-				if (
-						// We previously saved the attachment but it's no longer available.
-						( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) )
-						||
-						( file_exists( $attachments_directory . $attachment_filename )
-							&& (
-								is_dir( $file_to_copy ) // We'll just assume it's the same.
-								||
-								(
-									sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
-									&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
-								)
-							)
-						)
-					) {
-					// They're the same file. We've probably already run this script on the message that includes this file.
-				}
-				else {
+				$copy_file = true;
+
+				if ( ! file_exists( $file_to_copy ) && file_exists( $attachments_directory . $attachment_filename ) ) {
+					// We previously saved the attachment but it's no longer available.
+					$copy_file = false;
+				} else if ( is_dir( $file_to_copy ) ) {
+					// @noop
+				} else {
 					$suffix = 1;
 
-					// If a file already exists where we want to save this attachment, add a suffix like -1, -2, -3, etc. until we get a unique filename.
+					// If a file already exists where we want to save this attachment, add a suffix like -2, -3, etc. until we get a unique filename.
 					// But don't copy the file if the destination file is the same as the one we're copying.
 					while ( file_exists( $attachments_directory . $attachment_filename ) ) {
+						if (
+							sha1_file( $attachments_directory . $attachment_filename ) == sha1_file( $file_to_copy )
+							&& filesize( $attachments_directory . $attachment_filename ) == filesize( $file_to_copy )
+						) {
+							$copy_file = false;
+
+							// Now, clean up after ourselves, because previously, we would copy a new copy of this file
+							// every time the exporter ran, creating foo-2.jpg, foo-3.jpg, foo-4.jpg, [...], foo-3424.jpg
+							// Check the rest of the sequence, and if the filesize and sha1 match, delete those extra copies.
+
+							$leftover_files = array();
+							$leftover_filename = $attachment_filename;
+
+							do {
+								++$suffix;
+
+								$leftover_filename = $filename_base . '-' . $suffix;
+
+								if ( $extension ) {
+									$leftover_filename .= '.' . $extension;
+								}
+
+								if ( file_exists( $attachments_directory . $leftover_filename ) ) {
+									if (
+										sha1_file( $attachments_directory . $leftover_filename ) == sha1_file( $file_to_copy )
+										&& filesize( $attachments_directory . $leftover_filename ) == filesize( $file_to_copy )
+									) {
+										$leftover_files[] = $attachments_directory . $leftover_filename;
+									}
+								}
+							} while ( file_exists( $attachments_directory . $leftover_filename ) );
+
+							if ( ! empty( $leftover_files ) ) {
+								$leftover_files_to_delete = array_merge( $leftover_files_to_delete, $leftover_files );
+							}
+
+							break;
+						}
+
 						++$suffix;
 
 						$attachment_filename = $filename_base . '-' . $suffix;
@@ -702,7 +733,9 @@ while ( $message = $messages->fetchArray() ) {
 							$attachment_filename .= '.' . $extension;
 						}
 					}
+				}
 
+				if ( $copy_file ) {
 					if ( is_dir( $file_to_copy ) ) {
 						// Zip the directory and copy it.
 
@@ -762,6 +795,15 @@ while ( $message = $messages->fetchArray() ) {
 
 foreach ( $files_started as $html_file => $meta ) {
 	file_put_contents( $html_file, "\t</body>\n</html>", FILE_APPEND );
+}
+
+foreach ( $leftover_files_to_delete as $file_to_delete ) {
+	unlink( $file_to_delete );
+	echo "Deleted duplicate: " . $file_to_delete . "\n";
+}
+
+if ( count( $leftover_files_to_delete ) > 0 ) {
+	echo "Deleted " . count( $leftover_files_to_delete ) . " duplicate files.\n";
 }
 
 function get_contact_nicename( $contact_notnice_name ) {
