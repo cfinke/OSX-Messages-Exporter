@@ -386,10 +386,14 @@ if ( ! isset( $options['r'] ) ) {
 							mkdir( $new_attachments_directory );
 						}
 
-						shell_exec( "mv -n " . escapeshellarg( $old_attachments_directory ) . "* " . escapeshellarg( $new_attachments_directory ) );
+						$files_in_old_directory = explode( "\n", trim( shell_exec( "find " . escapeshellarg( $old_attachments_directory ) . " -type f" ) ) );
+
+						foreach ( $files_in_old_directory as $file_in_old_directory ) {
+							shell_exec( "mv -n " . escapeshellarg( $file_in_old_directory ) . " " . escapeshellarg( $new_attachments_directory ) );
+						}
 
 						if ( empty( glob( $old_attachments_directory . "/*" ) ) ) {
-							// If there were two files with the same filename, keep the one in the old directory.
+							// If there were two files with the same filename, keep the old directory around.
 							rmdir( $old_attachments_directory );
 						}
 					}
