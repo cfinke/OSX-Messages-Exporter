@@ -1000,10 +1000,48 @@ function get_staging_directory() {
 	if ( ! $staging_directory ) {
 		// A random name, so that nothing else can create it first.
 		$staging_directory = rtrim( sys_get_temp_dir(), DIRECTORY_SEPARATOR ) . DIRECTORY_SEPARATOR . 'messages-exporter-' . bin2hex( random_bytes( 8 ) ) . DIRECTORY_SEPARATOR;
+		// Remove it when the script ends, even if it ends early.
+		register_shutdown_function( 'remove_staging_directory', $staging_directory );
+
+		if ( function_exists( 'pcntl_async_signals' ) ) {
+			// Shutdown functions don't run when the script is stopped by a signal, so if it's
+			// stopped with Ctrl+C (SIGINT) or SIGTERM, remove the directory first, then let the
+			// signal stop the script as usual, so that a shell script running it stops too.
+			pcntl_async_signals( true );
+
+			foreach ( array( SIGINT, SIGTERM ) as $signal_to_handle ) {
+				pcntl_signal( $signal_to_handle, function ( $signal ) use ( $staging_directory ) {
+					remove_staging_directory( $staging_directory );
+
+					if ( function_exists( 'posix_kill' ) ) {
+						pcntl_signal( $signal, SIG_DFL );
+						posix_kill( posix_getpid(), $signal );
+					}
+
+					exit( 128 + $signal );
+				} );
+			}
+		}
+
 		mkdir( $staging_directory, 0700 );
 	}
 
 	return $staging_directory;
+}
+
+/**
+ * Delete the staging directory, along with anything that's still in it.
+ */
+function remove_staging_directory( $staging_directory ) {
+	if ( ! is_dir( $staging_directory ) ) {
+		return;
+	}
+
+	foreach ( array_diff( scandir( $staging_directory ), array( '.', '..' ) ) as $staged_file ) {
+		unlink( $staging_directory . $staged_file );
+	}
+
+	rmdir( $staging_directory );
 }
 
 /**
@@ -1036,11 +1074,22 @@ function commit_staged_html_files( $files_started ) {
 		else if ( file_exists( $html_file ) && sha1_file( $staging_file ) === sha1_file( $html_file ) ) {
 			++$unchanged;
 		}
-		else if ( overwrite_html_file( $staging_file, $html_file ) ) {
-			++$updated;
-		}
 		else {
-			++$failed;
+			// Hold off Ctrl+C until the file has been written completely.
+			if ( function_exists( 'pcntl_sigprocmask' ) ) {
+				pcntl_sigprocmask( SIG_BLOCK, array( SIGINT, SIGTERM ) );
+			}
+
+			if ( overwrite_html_file( $staging_file, $html_file ) ) {
+				++$updated;
+			}
+			else {
+				++$failed;
+			}
+
+			if ( function_exists( 'pcntl_sigprocmask' ) ) {
+				pcntl_sigprocmask( SIG_UNBLOCK, array( SIGINT, SIGTERM ) );
+			}
 		}
 
 		if ( file_exists( $staging_file ) ) {
@@ -1049,8 +1098,8 @@ function commit_staged_html_files( $files_started ) {
 	}
 
 	// Only look for the staging directory if anything was staged, so it isn't created just to be removed.
-	if ( $files_started && is_dir( get_staging_directory() ) ) {
-		rmdir( get_staging_directory() );
+	if ( $files_started ) {
+		remove_staging_directory( get_staging_directory() );
 	}
 
 	echo $updated . " HTML file(s) updated, " . $unchanged . " unchanged.\n";

@@ -299,7 +299,53 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 10: a Messages database with no messages is reported as an error"
+echo "TEST 10: an export stopped with Ctrl+C or SIGTERM removes its staging directory and leaves the exported files alone"
+INTERRUPT_OUT="$WORK/interrupt-out"
+INTERRUPT_DB="$WORK/interrupt.db"
+INTERRUPT_TMP="$WORK/interrupt-tmp"
+mkdir -p "$INTERRUPT_TMP"
+build_fixture "$INTERRUPT_DB"
+run_export "$INTERRUPT_OUT" "$INTERRUPT_DB" > /dev/null 2>&1
+BEFORE="$(snapshot "$INTERRUPT_OUT")"
+# Add enough messages straight to the backup database that rebuilding from it takes long
+# enough to interrupt. (Exporting them from a Messages database would take much longer.)
+# A rebuild that isn't interrupted would rewrite the one-to-one chat's file.
+sql "$INTERRUPT_OUT/messages-exporter.db" "
+	WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 30000)
+	INSERT INTO messages (chat_title, contact, is_from_me, timestamp, content)
+	SELECT chat_title, contact, 0, datetime(timestamp, '+' || i || ' minutes'), 'Message number ' || i FROM messages, n WHERE message_id = 1;
+"
+RESULTS=""
+
+for SIGNAL in INT TERM; do
+	# Rebuild in the background, with SIGINT handled as it is in a terminal (background jobs
+	# otherwise ignore it), and send the signal as soon as an HTML file has been staged.
+	perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$PHP" -d display_errors=stderr -d log_errors=0 -d error_reporting=-1 -d sys_temp_dir="$INTERRUPT_TMP" "$SCRIPT" -o "$INTERRUPT_OUT" -r > /dev/null 2> "$WORK/interrupt-$SIGNAL.err" &
+	PID=$!
+	TRIES=0
+
+	while [ -z "$(find "$INTERRUPT_TMP" -mindepth 2 -name '*.html')" ] && [ "$TRIES" -lt 500 ] && kill -0 "$PID" 2> /dev/null; do
+		sleep 0.02
+		TRIES=$((TRIES + 1))
+	done
+
+	kill -"$SIGNAL" "$PID" 2> /dev/null || RESULTS="$RESULTS (the export finished before it could be stopped)"
+	# The braces keep the shell from reporting that the job was terminated.
+	{ wait "$PID"; } 2> /dev/null
+	STATUS=$?
+	RESULTS="$RESULTS $SIGNAL:$STATUS:$(find "$INTERRUPT_TMP" -mindepth 1 | grep -c .)"
+done
+
+AFTER="$(snapshot "$INTERRUPT_OUT")"
+
+if [ "$RESULTS" = " INT:130:0 TERM:143:0" ] && [ "$BEFORE" = "$AFTER" ]; then
+	pass "stopped with statuses 130 and 143, removed the staging directory and left the exported files alone"
+else
+	fail "expected INT:130:0 TERM:143:0 (signal:status:leftover files) and no rewritten files; got$RESULTS and $(count_changed "$BEFORE" "$AFTER") rewritten file(s)"
+fi
+
+# ---------------------------------------------------------------------------
+echo "TEST 11: a Messages database with no messages is reported as an error"
 EMPTY_DB="$WORK/empty.db"
 build_fixture "$EMPTY_DB"
 # Like a Messages database whose messages haven't been downloaded from iCloud: the
@@ -320,7 +366,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 11: a --match that matches no conversations is reported as an error"
+echo "TEST 12: a --match that matches no conversations is reported as an error"
 php_export -o "$WORK/match-out" -d "$DB" --match "Nobody" > /dev/null 2> "$WORK/match.err"
 EXIT=$?
 
@@ -331,7 +377,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 12: a Messages database that doesn't exist is reported as an error"
+echo "TEST 13: a Messages database that doesn't exist is reported as an error"
 php_export -o "$WORK/missing-out" -d "$WORK/no-such.db" > /dev/null 2> "$WORK/missing.err"
 EXIT=$?
 
@@ -342,7 +388,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 13: an invalid --timezone is reported as an error"
+echo "TEST 14: an invalid --timezone is reported as an error"
 php_export -o "$WORK/timezone-out" -d "$DB" --timezone "Not/A_Zone" > /dev/null 2> "$WORK/timezone.err"
 EXIT=$?
 
@@ -353,7 +399,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 14: no run, even one that failed, leaves files behind in the output or temporary directory"
+echo "TEST 15: no run, even one that failed, leaves files behind in the output or temporary directory"
 STRAY="$(find "$OUT" -mindepth 1 -maxdepth 1 ! -name '*.html' ! -name 'messages-exporter.db'; find "$TMPDIR" -mindepth 1)"
 
 if [ -z "$STRAY" ]; then
@@ -363,7 +409,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 15: exporting prints no PHP warnings, notices or deprecations"
+echo "TEST 16: exporting prints no PHP warnings, notices or deprecations"
 WARNINGS="$(cat "$WORK"/run*.log "$WORK"/*.err | grep -iE 'deprecated|warning|notice|fatal')"
 
 if [ -z "$WARNINGS" ]; then
