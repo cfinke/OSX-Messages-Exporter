@@ -64,6 +64,7 @@ Caveats
     * Package that script into an app using [Platypus](https://github.com/cfinke/OSX-Messages-Exporter)
     * Give the app [Full Disk Access](https://macpaw.com/how-to/full-disk-access-mojave)
     * Modify your LaunchAgent (or other automated script) to run the app instead of running OSX Messages Exporter directly.
+* The script prints an error and exits with a status of 1 if the Messages database doesn't exist, if no messages could be read from it (which can happen when Messages in iCloud hasn't downloaded them to this Mac yet, or when `--match` or `--match_regex` doesn't match any conversations), or if an HTML file couldn't be updated, so that a script or scheduled job that runs it can tell that something went wrong.
 
 Questions?
 ==========

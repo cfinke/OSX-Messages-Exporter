@@ -140,7 +140,7 @@ if ( ! empty( $options['t'] ) ) {
 		new DateTimeZone( $options['t'] );
 	} catch ( Exception $e ) {
 		file_put_contents('php://stderr', "Invalid timezone identifier: " . $options['t'] . "\n" );
-		die;
+		exit( 1 );
 	}
 
 	date_default_timezone_set( $options['t'] );
@@ -206,11 +206,19 @@ if ( $previous_version < 2 ) {
 	}
 }
 
-$version_statement = $temp_db->prepare( "INSERT INTO meta (meta_key, meta_value) VALUES ('version', :meta_value)" );
-$version_statement->bindValue( ':meta_value', VERSION, SQLITE3_TEXT );
-$version_statement->execute();
+# Only write the version when it changes, so that a run with nothing new to back up
+# doesn't modify the backup database.
+if ( $previous_version < VERSION ) {
+	$version_statement = $temp_db->prepare( "INSERT INTO meta (meta_key, meta_value) VALUES ('version', :meta_value)" );
+	$version_statement->bindValue( ':meta_value', VERSION, SQLITE3_TEXT );
+	$version_statement->execute();
+}
 
 $updated_contacts_memo = array();
+
+# The number of messages read from the Messages database. An export that reads none
+# is reported as an error at the end.
+$source_message_count = 0;
 
 if ( ! isset( $options['r'] ) ) {
 	$chat_db_path = $_SERVER['HOME'] . "/Library/Messages/chat.db";
@@ -220,7 +228,8 @@ if ( ! isset( $options['r'] ) ) {
 	}
 
 	if ( ! file_exists( $chat_db_path ) ) {
-		die( "Error: The file " . $chat_db_path . " does not exist.\n" );
+		file_put_contents( 'php://stderr', "Error: The file " . $chat_db_path . " does not exist.\n" );
+		exit( 1 );
 	}
 
 	$db = new SQLite3( $chat_db_path, SQLITE3_OPEN_READONLY );
@@ -281,6 +290,8 @@ if ( ! isset( $options['r'] ) ) {
 		$messages = $statement->execute();
 
 		while ( $message = $messages->fetchArray( SQLITE3_ASSOC ) ) {
+			++$source_message_count;
+
 			if ( empty( $message['text'] ) ) {
 				$message['text'] = '';
 			}
@@ -343,7 +354,9 @@ if ( ! isset( $options['r'] ) ) {
 				}
 			}
 
-			if ( strpos( $chat_title, ', ' ) === false && ! isset( $updated_contacts_memo[ $message['contact'] ] ) ) {
+			// The contact is null for messages that have no handle, and PHP 8.5 deprecates using null
+			// as an array key. An empty string is the key that PHP was converting null to anyway.
+			if ( strpos( $chat_title, ', ' ) === false && ! isset( $updated_contacts_memo[ $message['contact'] ?? '' ] ) ) {
 				// Get all existing chat names for this contact ID.
 				// If the contact name has changed, update it for old messages and update the folder and filenames.
 				$stored_messages_statement = $temp_db->prepare( "SELECT chat_title FROM messages WHERE contact=:contact GROUP BY chat_title" );
@@ -399,7 +412,7 @@ if ( ! isset( $options['r'] ) ) {
 					}
 				}
 
-				$updated_contacts_memo[ $message['contact'] ] = true;
+				$updated_contacts_memo[ $message['contact'] ?? '' ] = true;
 			}
 
 			// 0xfffc is the Object Replacement Character. Messages uses it as a placeholder for the image attachment, but we can strip it out because we process attachments separately.
@@ -549,6 +562,8 @@ if ( ! isset( $options['r'] ) ) {
 			}
 		}
 	}
+
+	echo "Read " . $source_message_count . " message(s) from " . $chat_db_path . ".\n";
 }
 
 do {
@@ -621,6 +636,7 @@ while ( $message = $messages->fetchArray() ) {
 
 		$files_started[ $html_file ]['last_time'] = 0;
 		$files_started[ $html_file ]['last_participant'] = null;
+		$files_started[ $html_file ]['write_failed'] = false;
 	}
 
 	$this_time = strtotime( $message['timestamp'] );
@@ -790,16 +806,21 @@ while ( $message = $messages->fetchArray() ) {
 
 	$output .= "<br />\n";
 
-	file_put_contents(
-		$html_file,
-		$output,
-		$write_mode
-	);
+	// The HTML goes into a staged copy first. See commit_staged_html_files().
+	if ( ! $files_started[ $html_file ]['write_failed'] && false === file_put_contents( get_staging_file( $html_file ), $output, $write_mode ) ) {
+		// If the disk is full, for example. The incomplete copy mustn't replace the
+		// exported file, so it won't be used, and there's no point writing more to it.
+		$files_started[ $html_file ]['write_failed'] = true;
+	}
 }
 
 foreach ( $files_started as $html_file => $meta ) {
-	file_put_contents( $html_file, "\t</body>\n</html>", FILE_APPEND );
+	if ( ! $meta['write_failed'] && false === file_put_contents( get_staging_file( $html_file ), "\t</body>\n</html>", FILE_APPEND ) ) {
+		$files_started[ $html_file ]['write_failed'] = true;
+	}
 }
+
+$html_files_not_updated = commit_staged_html_files( $files_started );
 
 foreach ( $leftover_files_to_delete as $file_to_delete ) {
 	unlink( $file_to_delete );
@@ -808,6 +829,26 @@ foreach ( $leftover_files_to_delete as $file_to_delete ) {
 
 if ( count( $leftover_files_to_delete ) > 0 ) {
 	echo "Deleted " . count( $leftover_files_to_delete ) . " duplicate files.\n";
+}
+
+if ( ! isset( $options['r'] ) && 0 === $source_message_count ) {
+	// Nothing new could have been backed up, so exit with an error status, which a
+	// script or scheduled job running the export can check for.
+	$error = "Error: No messages were read from " . $chat_db_path . ".\n";
+
+	if ( isset( $options['match'] ) || isset( $options['match_regex'] ) ) {
+		$error .= "Check that --match or --match_regex matches the title of at least one conversation.\n";
+	}
+
+	$error .= "If Messages in iCloud is turned on, your messages may not have been downloaded to this Mac yet.\n";
+
+	file_put_contents( 'php://stderr', $error );
+	exit( 1 );
+}
+
+if ( $html_files_not_updated > 0 ) {
+	file_put_contents( 'php://stderr', "Error: " . $html_files_not_updated . " HTML file(s) could not be updated.\n" );
+	exit( 1 );
 }
 
 function get_contact_nicename( $contact_notnice_name ) {
@@ -947,6 +988,157 @@ function get_attachments_directory( $chat_title_for_filesystem ) {
 	global $options;
 
 	return $options['o'] . $chat_title_for_filesystem . '/';
+}
+
+/**
+ * Where the HTML files are written before they're committed: a new directory for
+ * each run, in the system's temporary directory, that only the current user can read.
+ */
+function get_staging_directory() {
+	static $staging_directory = null;
+
+	if ( ! $staging_directory ) {
+		// A random name, so that nothing else can create it first.
+		$staging_directory = rtrim( sys_get_temp_dir(), DIRECTORY_SEPARATOR ) . DIRECTORY_SEPARATOR . 'messages-exporter-' . bin2hex( random_bytes( 8 ) ) . DIRECTORY_SEPARATOR;
+		// Remove it when the script ends, even if it ends early.
+		register_shutdown_function( 'remove_staging_directory', $staging_directory );
+
+		if ( function_exists( 'pcntl_async_signals' ) ) {
+			// Shutdown functions don't run when the script is stopped by a signal, so if it's
+			// stopped with Ctrl+C (SIGINT) or SIGTERM, remove the directory first, then let the
+			// signal stop the script as usual, so that a shell script running it stops too.
+			pcntl_async_signals( true );
+
+			foreach ( array( SIGINT, SIGTERM ) as $signal_to_handle ) {
+				pcntl_signal( $signal_to_handle, function ( $signal ) use ( $staging_directory ) {
+					remove_staging_directory( $staging_directory );
+
+					if ( function_exists( 'posix_kill' ) ) {
+						pcntl_signal( $signal, SIG_DFL );
+						posix_kill( posix_getpid(), $signal );
+					}
+
+					exit( 128 + $signal );
+				} );
+			}
+		}
+
+		mkdir( $staging_directory, 0700 );
+	}
+
+	return $staging_directory;
+}
+
+/**
+ * Delete the staging directory, along with anything that's still in it.
+ */
+function remove_staging_directory( $staging_directory ) {
+	if ( ! is_dir( $staging_directory ) ) {
+		return;
+	}
+
+	foreach ( array_diff( scandir( $staging_directory ), array( '.', '..' ) ) as $staged_file ) {
+		unlink( $staging_directory . $staged_file );
+	}
+
+	rmdir( $staging_directory );
+}
+
+/**
+ * The path that an HTML file is written to before it's committed. It's named after
+ * a hash of the HTML file's path, so the name is never too long and is never shared.
+ */
+function get_staging_file( $html_file ) {
+	return get_staging_directory() . md5( $html_file ) . '.html';
+}
+
+/**
+ * Write each staged HTML file over the exported file, but only if the contents
+ * changed. Rewriting an unchanged file would only update its modification time,
+ * which makes backup and sync tools like Time Machine and rsync treat it as changed.
+ *
+ * Returns the number of HTML files that could not be updated.
+ */
+function commit_staged_html_files( $files_started ) {
+	$updated = 0;
+	$unchanged = 0;
+	$failed = 0;
+
+	foreach ( $files_started as $html_file => $meta ) {
+		$staging_file = get_staging_file( $html_file );
+
+		if ( $meta['write_failed'] ) {
+			// PHP will already have printed a warning about why.
+			++$failed;
+		}
+		else if ( file_exists( $html_file ) && sha1_file( $staging_file ) === sha1_file( $html_file ) ) {
+			++$unchanged;
+		}
+		else {
+			// Hold off Ctrl+C until the file has been written completely.
+			if ( function_exists( 'pcntl_sigprocmask' ) ) {
+				pcntl_sigprocmask( SIG_BLOCK, array( SIGINT, SIGTERM ) );
+			}
+
+			if ( overwrite_html_file( $staging_file, $html_file ) ) {
+				++$updated;
+			}
+			else {
+				++$failed;
+			}
+
+			if ( function_exists( 'pcntl_sigprocmask' ) ) {
+				pcntl_sigprocmask( SIG_UNBLOCK, array( SIGINT, SIGTERM ) );
+			}
+		}
+
+		if ( file_exists( $staging_file ) ) {
+			unlink( $staging_file );
+		}
+	}
+
+	// Only look for the staging directory if anything was staged, so it isn't created just to be removed.
+	if ( $files_started ) {
+		remove_staging_directory( get_staging_directory() );
+	}
+
+	echo $updated . " HTML file(s) updated, " . $unchanged . " unchanged.\n";
+
+	return $failed;
+}
+
+/**
+ * Write a staged HTML file over the exported file. Like copy(), this writes over the
+ * file in place, so it keeps its permissions and other attributes, as the export
+ * always did. But it doesn't truncate the file until all of the new contents have
+ * been written, so if they don't fit (because the disk is full, for example), the
+ * file isn't left empty or shorter than it was.
+ *
+ * Returns whether the whole file was written.
+ */
+function overwrite_html_file( $staging_file, $html_file ) {
+	$source = fopen( $staging_file, 'rb' );
+
+	if ( ! $source ) {
+		return false;
+	}
+
+	$size = fstat( $source )['size'];
+
+	// "c" opens the file for writing without truncating it.
+	$destination = fopen( $html_file, 'cb' );
+
+	$written = $destination
+		&& stream_copy_to_stream( $source, $destination ) === $size
+		&& ftruncate( $destination, $size );
+
+	fclose( $source );
+
+	if ( $destination ) {
+		$written = fclose( $destination ) && $written;
+	}
+
+	return $written;
 }
 
 /**
