@@ -48,6 +48,19 @@ count_changed() {
 	echo "$2" | grep -vxF -f "$WORK/snapshot" | grep -c .
 }
 
+# The images that an exported HTML file links to, one per line.
+linked_images() {
+	grep -o '<img src="[^"]*"' "$1" | sed 's/^<img src="//; s/"$//'
+}
+
+# Whether exported HTML file $1 links to an image with the same contents as file $2. Links are
+# URL-decoded first, like a browser would.
+links_to_copy() {
+	linked_images "$1" | while read -r IMAGE; do
+		cmp -s "$2" "$(dirname "$1")/$("$PHP" -r 'echo rawurldecode( $argv[1] );' "$IMAGE")" && echo found
+	done | grep -q found
+}
+
 # sqlite3 reads ~/.sqliterc from the real home directory whatever $HOME says, so
 # tell it not to.
 sql() {
@@ -399,7 +412,54 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 15: no run, even one that failed, leaves files behind in the output or temporary directory"
+echo "TEST 15: attachments whose filenames are too long to save with their date prefix are exported and linked"
+ATTACHMENT_OUT="$WORK/attachment-out"
+ATTACHMENT_DB="$WORK/attachment.db"
+ATTACHMENT_HTML="$ATTACHMENT_OUT/+15550000001.html"
+build_fixture "$ATTACHMENT_DB"
+# Two different SVGs pasted from a browser, in one message, both with the same data URI
+# filename. It's 255 bytes, the longest that macOS allows, so with the date prefix it's
+# too long to save under its own name.
+LONG_NAME="svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212.5%22%3E$(printf '%%20%.0s' $(seq 50))"
+mkdir -p "$WORK/attachments/1" "$WORK/attachments/2"
+echo '<svg xmlns="http://www.w3.org/2000/svg" id="one"/>' > "$WORK/attachments/1/$LONG_NAME"
+echo '<svg xmlns="http://www.w3.org/2000/svg" id="two"/>' > "$WORK/attachments/2/$LONG_NAME"
+cp "$WORK/attachments/1/$LONG_NAME" "$WORK/attachment-1.svg"
+cp "$WORK/attachments/2/$LONG_NAME" "$WORK/attachment-2.svg"
+# The attachments directory, quoted for SQL.
+ATTACHMENTS_SQL="$(echo "$WORK/attachments" | sed "s/'/''/g")"
+sql "$ATTACHMENT_DB" "
+	UPDATE message SET cache_has_attachments = 1 WHERE ROWID = 1;
+	INSERT INTO attachment (ROWID, guid, filename, mime_type, transfer_name) VALUES
+		(1, 'ATT-1', '$ATTACHMENTS_SQL/1/$LONG_NAME', 'image/svg+xml', 'image.svg'),
+		(2, 'ATT-2', '$ATTACHMENTS_SQL/2/$LONG_NAME', 'image/svg+xml', 'image.svg');
+	INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (1, 1), (1, 2);
+"
+# With -d, the exporter only copies attachments if it's also given --force-attachments.
+php_export -o "$ATTACHMENT_OUT" -d "$ATTACHMENT_DB" --force-attachments > "$WORK/run15.log" 2>&1
+EXIT=$?
+
+if [ "$EXIT" -eq 0 ] && links_to_copy "$ATTACHMENT_HTML" "$WORK/attachment-1.svg" && links_to_copy "$ATTACHMENT_HTML" "$WORK/attachment-2.svg"; then
+	pass "both attachments were saved and linked"
+else
+	fail "expected exit status 0 and links to a copy of each attachment; got status $EXIT and the links: $(linked_images "$ATTACHMENT_HTML")"
+fi
+
+# ---------------------------------------------------------------------------
+echo "TEST 16: once the originals are gone, the saved copies of those attachments are still linked"
+# Delete the exported HTML too, so that the links checked are new ones.
+rm -r "$WORK/attachments/1" "$WORK/attachments/2" "$ATTACHMENT_HTML"
+php_export -o "$ATTACHMENT_OUT" -d "$ATTACHMENT_DB" --force-attachments > "$WORK/run16.log" 2>&1
+EXIT=$?
+
+if [ "$EXIT" -eq 0 ] && links_to_copy "$ATTACHMENT_HTML" "$WORK/attachment-1.svg" && links_to_copy "$ATTACHMENT_HTML" "$WORK/attachment-2.svg"; then
+	pass "the saved copies are still linked"
+else
+	fail "expected exit status 0 and links to the saved copies; got status $EXIT and the links: $(linked_images "$ATTACHMENT_HTML")"
+fi
+
+# ---------------------------------------------------------------------------
+echo "TEST 17: no run, even one that failed, leaves files behind in the output or temporary directory"
 STRAY="$(find "$OUT" -mindepth 1 -maxdepth 1 ! -name '*.html' ! -name 'messages-exporter.db'; find "$TMPDIR" -mindepth 1)"
 
 if [ -z "$STRAY" ]; then
@@ -409,7 +469,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-echo "TEST 16: exporting prints no PHP warnings, notices or deprecations"
+echo "TEST 18: exporting prints no PHP warnings, notices or deprecations"
 WARNINGS="$(cat "$WORK"/run*.log "$WORK"/*.err | grep -iE 'deprecated|warning|notice|fatal')"
 
 if [ -z "$WARNINGS" ]; then
