@@ -680,6 +680,20 @@ while ( $message = $messages->fetchArray() ) {
 				$attachment_filename .= ".zip";
 			}
 
+			// Filenames over 255 bytes usually can't be saved, so name the attachment after a hash of its
+			// path instead (which is known even once the original file is gone), unless it was already
+			// saved under the long name.
+			if ( strlen( $attachment_filename ) > 255 && ! file_exists( $attachments_directory . $attachment_filename ) ) {
+				$extension = pathinfo( $attachment_filename, PATHINFO_EXTENSION );
+
+				$attachment_filename = date( 'Y-m-d H i s', strtotime( $message['timestamp'] ) ) . ' - {' . md5( $message['content'] ) . '}';
+
+				// Only keep the extension if it looks like one: up to 20 letters or digits (20 is arbitrary).
+				if ( preg_match( '/^[a-z0-9]{1,20}\z/i', $extension ) ) {
+					$attachment_filename .= '.' . $extension;
+				}
+			}
+
 			// If the file is no longer available and we didn't previously save it, show "File Not Found".
 			if ( ! file_exists( $file_to_copy ) && ! file_exists( $attachments_directory . $attachment_filename ) ) {
 				$html_embed = '[File Not Found: ' . $attachment_filename . ']';
